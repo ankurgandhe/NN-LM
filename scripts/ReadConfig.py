@@ -41,6 +41,27 @@ def ReadConfigFile(fConfig):
         fmodel = ""
         params['fmodel']=""
 
+    if parser.has_option('inputs', 'train_feature_file'):
+        value = parser.get('inputs', 'train_feature_file').strip('"')
+        params['train_feature_file']=value
+        params['n_features'] =  parser.getint('training_params', 'n_features')
+    else:
+        params['train_feature_file']=""
+        params['n_features'] =0
+
+    if parser.has_option('inputs', 'dev_feature_file'):
+        value = parser.get('inputs', 'dev_feature_file').strip('"')
+        params['dev_feature_file']=value
+    else:
+        params['dev_feature_file']=""
+
+    if parser.has_option('inputs', 'test_feature_file'):
+        value = parser.get('inputs', 'test_feature_file').strip('"')
+        params['test_feature_file']=value
+
+    else:
+        params['test_feature_file']=""
+
     value = parser.get('outputs', 'output_model_dir').strip('"')
     foutparam = value
     params['foutparam']=value
@@ -68,6 +89,14 @@ def ReadConfigFile(fConfig):
     else:
         use_unk = False #default value 
         params['use_unk']=use_unk
+
+    if parser.has_option('training_params','write_ngram_files'):
+        write_files  =  parser.getboolean('training_params','write_ngram_files')
+        params['write_ngram_files']=write_files
+    else:
+        write_files = False #default value
+        params['write_ngram_files']=write_files
+
     
     if parser.has_option('training_params','use_adaptive_rate'):
         use_adaptive = parser.getboolean('training_params','use_adaptive_rate')

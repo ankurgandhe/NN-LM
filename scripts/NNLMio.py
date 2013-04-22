@@ -197,3 +197,10 @@ def write_params(param_file,pW,hW,hB,lB,lB2,lW,lW2):
             print >> fparam, wij,
         print >> fparam, ''
     print >> fparam, "</W>"
+
+def WriteData(DataList, filename):
+    print >> sys.stderr, "Writing to file:",filename,", No of lines:", len(DataList)
+    fwrite = open(filename,'w')
+    for l in DataList:
+        print >> fwrite, l 
+    fwrite.close()

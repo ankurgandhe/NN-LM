@@ -25,6 +25,11 @@ def train_nnlm(params):
     ftest = params['ftest']
     fvocab = params['fvocab']
     ffreq = params['ffreq']
+    ftrainfeat = params['train_feature_file']
+    fdevfeat = params['dev_feature_file']
+    ftestfeat = params['test_feature_file']
+
+    n_feats =params['n_features']
     ngram = params ['ngram']
     add_unk = params['add_unk']
     use_unk = params['use_unk']
@@ -46,10 +51,21 @@ def train_nnlm(params):
     DevData = CreateData(fdev,fvocab,ffreq,ngram,False,use_unk)
     print >> sys.stderr, 'Reading Training File: ' , ftest
     TestData = CreateData(ftest,fvocab,ffreq,ngram,False,use_unk)
+    if params['write_ngram_files']:
+        WriteData(TrainData, ftrain+'.'+str(ngram)+'g')
+        WriteData(DevData, fdev+'.'+str(ngram)+'g')
+        WriteData(TestData, ftest+'.'+str(ngram)+'g')
+        print >> sys.stderr, "ngrams file written... rerun with [ write_ngram_file = False ] for training"
+        sys.exit(1)
 
+    if ftrainfeat!="" and fdevfeat!="" and ftestfeat!="":
+        print >> sys.stderr, 'Reading training, dev and test Feature Files ', ftrainfeat, fdevfeat, ftestfeat
+        NNLMFeatData = load_alldata_from_file(ftrainfeat,fdevfeat,ftestfeat,ngram,n_feats)
+    else:
+        NNLMFeatData = []
+        n_feats = 0
     #Convert data suitable for NNLM training 
     NNLMdata = load_alldata(TrainData,DevData,TestData,ngram,N_input_layer)
-    
     foldmodel = params['fmodel']
     if foldmodel.strip()!="":
         OldParams = load_params_matlab(foldmodel)
@@ -57,7 +73,7 @@ def train_nnlm(params):
         OldParams = False 
     
     print_params(foldmodel,ngram,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
-    train_mlp(NNLMdata,OldParams,ngram,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
+    train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
 
     return 1
 

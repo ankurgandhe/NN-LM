@@ -25,7 +25,7 @@ def CreateData(ftrain,fvocab,fvocabfreq,ngram,add_unk,use_unk):
     else:
         TrainingData = PrepareData(ftrain,ngram,WordID)
     
-    return TrainingData 
+    return TrainingData
 
 def ReadVocabFile(fp):
     WordID={}
@@ -148,4 +148,27 @@ def PrepareData(ftrain,ngram,WordID):
         TrainingData.append(strLine)
     return TrainingData
 
+def CreateFeatData(ffeat,ftrain,fvocab,fvocabfreq,ngram,add_unk,use_unk):
+    UNKw=[]
+    if (fvocabfreq.strip()==""):
+        print >> sys.stderr, "frequency file not given"
+        add_unk=False
+        use_unk=False
+    else:
+        UNKw = ReadFreqFile(fvocabfreq)
+        if UNKw==[]:
+            add_unk=False
+            use_unk=False
+    (WordID,printMapFile) = ReadVocabFile(fvocab)
+    if printMapFile:
+        fwrite = open(fvocab+".nnid",'w')
+        for w in sorted(WordID, key=WordID.get):
+            print >> fwrite, w,WordID[w]
+    
+    if add_unk:
+        TrainingData = PrepareData_UNK(ftrain,ngram,WordID,UNKw)
+    elif use_unk:
+        TrainingData = PrepareData_UNK(ftrain,ngram,WordID,UNKw)
+    else:
+        TrainingData = PrepareData(ftrain,ngram,WordID)
 

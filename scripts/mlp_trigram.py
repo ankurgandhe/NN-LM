@@ -132,7 +132,7 @@ class MLP(object):
     that has one layer or more of hidden units and nonlinear activation
     """
     
-    def __init__(self, rng, input, history1, n_in,n_P, n_hidden, n_out, ngram=3, Voc=4096,pW=None,hW=None,hB=None,lW=None,lB=None,lW2=None,lB2=None):
+    def __init__(self, rng, input, history1, feature,n_features, n_in,n_P, n_hidden, n_out, ngram=3, Voc=4096,pW=None,hW=None,hB=None,lW=None,lB=None,lW2=None,lB2=None):
         #def __init__(self, rng, input, history1, n_in,n_P, n_hidden, n_out,Voc,ngram):
         
         if ngram==3:
@@ -203,6 +203,22 @@ def convert_to_sparse(x,N=4096):
         data.append(z)
     return data 
 
+def convert_to_sparse_combine(x,x1,N=4096):
+    data=[]
+    for i,i1 in zip(x,x1):
+        y = zeros((N),dtype=theano.config.floatX)
+        if i >=N:
+            i=2
+        if i1>=N:
+            i1=2
+        y[i]=1
+        y[i2]=1
+        z=y
+        data.append(z)
+    
+    return data
+
+
 def shared_dataset(data_xy, ngram,borrow=False):
     """ Function that loads the dataset into shared variables
     
@@ -232,15 +248,15 @@ def shared_dataset(data_xy, ngram,borrow=False):
     else:
         return shared_x, T.cast(shared_y, 'int32')
 
-def train_mlp(NNLMdata,OldParams,ngram,N,P,H,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
+def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
             
-    copy_size=40000
+    copy_size=75000
     learning_rate0 = learning_rate 
     if ngram==3:
         ntrain_set_x,  ntrain_set_x1, ntrain_set_y = NNLMdata[0]
         nvalid_set_x, nvalid_set_x1, nvalid_set_y = NNLMdata[1]
         ntest_set_x, ntest_set_x1, ntest_set_y = NNLMdata[2]
-
+               
         nvalid_set_x = convert_to_sparse(nvalid_set_x,N)
         nvalid_set_x1 = convert_to_sparse(nvalid_set_x1,N)
 
@@ -249,7 +265,16 @@ def train_mlp(NNLMdata,OldParams,ngram,N,P,H,learning_rate, L1_reg, L2_reg, n_ep
 
         valid_set_x, valid_set_x1, valid_set_y = shared_dataset((nvalid_set_x, nvalid_set_x1,nvalid_set_y),ngram)
         test_set_x, test_set_x1, test_set_y =   shared_dataset((ntest_set_x,ntest_set_x1, ntest_set_y),ngram)
-    
+        if n_feats > 0:
+            ntrain_set_featx,  ntrain_set_featx1, ntrain_set_featy = NNLMFeatData[0]
+            nvalid_set_featx, nvalid_set_featx1, nvalid_set_featy = NNLMFeatData[1]
+            ntest_set_featx, ntest_set_featx1, ntest_set_featy = NNLMFeatData[2]
+
+            nvalid_set_featx  = convert_to_sparse_combine(nvalid_set_featx,nvalid_set_featx1,n_feats)
+
+            ntest_set_featx  = convert_to_sparse_combine(ntest_set_featx,ntest_set_featx1,n_feats)            
+            #need a shared verions of this data 
+            
         tot_train_size = len(ntrain_set_x)
         
         ######################
@@ -261,6 +286,7 @@ def train_mlp(NNLMdata,OldParams,ngram,N,P,H,learning_rate, L1_reg, L2_reg, n_ep
         index = T.lscalar()    # index to a [mini]batch
         x = T.matrix('x')  # the data is presented as rasterized images
         x1 = T.matrix('x1')
+        xfeat = T.matrix('xfeat') # if we hav features 
         y = T.ivector('y')  # the labels are presented as 1D vector of
                             
         rng = numpy.random.RandomState(1234)
@@ -268,9 +294,9 @@ def train_mlp(NNLMdata,OldParams,ngram,N,P,H,learning_rate, L1_reg, L2_reg, n_ep
         # construct the MLP class
 	if OldParams:
             pW,hW,hB,lB,lB2,lW,lW2 = OldParams
-            classifier = MLP(rng=rng, input=x, history1=x1,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
+            classifier = MLP(rng=rng, input=x, history1=x1,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
 	else:
-            classifier = MLP(rng=rng, input=x, history1=x1,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram)
+            classifier = MLP(rng=rng, input=x, history1=x1,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram)
 
         # the cost we minimize during training is the negative log likelihood of
         # the model plus the regularization terms (L1 and L2); cost is expressed
@@ -281,21 +307,38 @@ def train_mlp(NNLMdata,OldParams,ngram,N,P,H,learning_rate, L1_reg, L2_reg, n_ep
 
         # compiling a Theano function that computes the mistakes that are made
         # by the model on a minibatch
-        test_model = theano.function(inputs=[index],
-            outputs=classifier.tot_ppl(y),
-            givens={ x: test_set_x[index * batch_size:(index + 1) * batch_size],
-                     x1: test_set_x1[index * batch_size:(index + 1) * batch_size],
-                     y: test_set_y[index * batch_size:(index + 1) * batch_size]})
+        if n_feats==0:
+            test_model = theano.function(inputs=[index],
+                                         outputs=classifier.tot_ppl(y),
+                                         givens={ x: test_set_x[index * batch_size:(index + 1) * batch_size],
+                                                  x1: test_set_x1[index * batch_size:(index + 1) * batch_size],
+                                                  y: test_set_y[index * batch_size:(index + 1) * batch_size]})
     
-        final_weights = theano.function(inputs=[], outputs=[classifier.get_params_pW(),classifier.get_params_hW(),classifier.get_params_hb(),
-                                                            classifier.get_params_lW(),classifier.get_params_lb(),classifier.get_params_lW2(),classifier.get_params_lb2()])
 
-        validate_model = theano.function(inputs=[index],
-            outputs=classifier.tot_ppl(y),
-            givens={
-                x: valid_set_x[index * batch_size:(index + 1) * batch_size],
-		x1: valid_set_x1[index * batch_size:(index + 1) * batch_size],
-                y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
+            validate_model = theano.function(inputs=[index],
+                                             outputs=classifier.tot_ppl(y),
+                                             givens={x: valid_set_x[index * batch_size:(index + 1) * batch_size],
+                                                     x1: valid_set_x1[index * batch_size:(index + 1) * batch_size],
+                                                     y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
+        else:
+            test_model = theano.function(inputs=[index],
+                                         outputs=classifier.tot_ppl(y),
+                                         givens={ x: test_set_x[index * batch_size:(index + 1) * batch_size],
+                                                  x1: test_set_x1[index * batch_size:(index + 1) * batch_size],
+                                                  xfeat:  test_set_featx[index * batch_size:(index + 1) * batch_size],
+                                                  y: test_set_y[index * batch_size:(index + 1) * batch_size]})
+
+
+            validate_model = theano.function(inputs=[index],
+                                             outputs=classifier.tot_ppl(y),
+                                             givens={x: valid_set_x[index * batch_size:(index + 1) * batch_size],
+                                                     x1: valid_set_x1[index * batch_size:(index + 1) * batch_size],
+                                                     xfeat:  test_set_featx[index * batch_size:(index + 1) * batch_size],
+                                                     y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
+            
+        final_weights = theano.function(inputs=[], outputs=[classifier.get_params_pW(),classifier.get_params_hW(),classifier.get_params_hb(),
+                                                                classifier.get_params_lW(),classifier.get_params_lb(),classifier.get_params_lW2(),classifier.get_params_lb2()])
+
     else:
         ntrain_set_x, ntrain_set_y = NNLMdata[0]
         nvalid_set_x, nvalid_set_y = NNLMdata[1]
@@ -308,33 +351,49 @@ def train_mlp(NNLMdata,OldParams,ngram,N,P,H,learning_rate, L1_reg, L2_reg, n_ep
         valid_set_x, valid_set_y = shared_dataset((nvalid_set_x,nvalid_set_y),ngram)
         test_set_x, test_set_y =   shared_dataset((ntest_set_x,ntest_set_y),ngram)
 
+        if n_feats > 0:
+            ntrain_set_featx, ntrain_set_featy = NNLMFeatData[0]
+            nvalid_set_featx, nvalid_set_featy = NNLMFeatData[1]
+            ntest_set_featx, ntest_set_featy = NNLMFeatData[2]
+
+            nvalid_set_featx  = convert_to_sparse(nvalid_set_featx,n_feats)
+
+            ntest_set_featx  = convert_to_sparse(ntest_set_featx,n_feats)
+
+            #need to create a shared version
+
+
         index = T.lscalar()    # index to a [mini]batch
         x = T.matrix('x')  # the data is presented as rasterized images
+        xfeat = T.matrix('xfeat') 
         y = T.ivector('y')  # the labels are presented as 1D vector of
         rng = numpy.random.RandomState(1234)
 
         if OldParams:
             pW,hW,hB,lB,lB2,lW,lW2 = OldParams
-            classifier = MLP(rng=rng, input=x, history1="",n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
+            classifier = MLP(rng=rng, input=x, history1="",feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
         else:
-            classifier = MLP(rng=rng, input=x, history1="",n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram)
+            classifier = MLP(rng=rng, input=x, history1="",feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram)
 
         cost = classifier.negative_log_likelihood(y) \
             + L1_reg * classifier.L1 \
             + L2_reg * classifier.L2_sqr
 
-        test_model = theano.function(inputs=[index],
+        if n_feats==0:
+            test_model = theano.function(inputs=[index],
                                      outputs=classifier.tot_ppl(y),
-                                     givens={ x: test_set_x[index * batch_size:(index + 1) * batch_size],
-                                              y: test_set_y[index * batch_size:(index + 1) * batch_size]})
+                                         givens={ x: test_set_x[index * batch_size:(index + 1) * batch_size],
+                                                  y: test_set_y[index * batch_size:(index + 1) * batch_size]})
         
+
+            validate_model = theano.function(inputs=[index],
+                                             outputs=classifier.tot_ppl(y),
+                                             givens={x: valid_set_x[index * batch_size:(index + 1) * batch_size],
+                                                     y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
+            
         final_weights = theano.function(inputs=[], outputs=[classifier.get_params_pW(),classifier.get_params_hW(),classifier.get_params_hb(),
                                                             classifier.get_params_lW(),classifier.get_params_lb(),classifier.get_params_lW2(),classifier.get_params_lb2()])
-        validate_model = theano.function(inputs=[index],
-                                         outputs=classifier.tot_ppl(y),
-                                         givens={x: valid_set_x[index * batch_size:(index + 1) * batch_size],
-                                                 y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
-        
+  
     
     # Get counts etc... 
     tot_train_size = len(ntrain_set_x)    
@@ -393,20 +452,39 @@ def train_mlp(NNLMdata,OldParams,ngram,N,P,H,learning_rate, L1_reg, L2_reg, n_ep
                 ntrain_set_x1_sparse = convert_to_sparse(ntrain_set_x1[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],N)
                 train_set_x, train_set_x1,train_set_y = shared_dataset((ntrain_set_x_sparse, ntrain_set_x1_sparse, 
                                                                         ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)]),ngram)
-            
-                train_model = theano.function(inputs=[index], outputs=cost,                                                                      
-                                              updates=updates,                     
-                                              givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size], 
-                                                          x1: train_set_x1[index * batch_size:(index + 1) * batch_size],
-                                                          y: train_set_y[index * batch_size:(index + 1) * batch_size]})
+                if n_feats > 0:
+                    ntrain_set_featx_sparse = convert_to_sparse_combine(ntrain_set_featx[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],n_feats)
+                     #Need to create a shared version
+                    train_model = theano.function(inputs=[index], outputs=cost,                                                                      
+                                                  updates=updates,                     
+                                                  givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size], 
+                                                              x1: train_set_x1[index * batch_size:(index + 1) * batch_size],
+                                                              xfeat: train_set_featx[index * batch_size:(index + 1) * batch_size],
+                                                              y: train_set_y[index * batch_size:(index + 1) * batch_size]})
+                else:
+                    train_model = theano.function(inputs=[index], outputs=cost,
+                                                  updates=updates,
+                                                  givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                                                              x1: train_set_x1[index * batch_size:(index + 1) * batch_size],
+                                                              y: train_set_y[index * batch_size:(index + 1) * batch_size]})
+                    
+                
             else:
                  ntrain_set_x_sparse = convert_to_sparse(ntrain_set_x[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],N)
                  train_set_x,train_set_y = shared_dataset((ntrain_set_x_sparse, ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)]),ngram)
-                 train_model = theano.function(inputs=[index], outputs=cost,
-                                               updates=updates,                                                                                                                     
-                                               givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size],
-                                                           y: train_set_y[index * batch_size:(index + 1) * batch_size]})
-            
+                 if n_feats > 0:
+                     ntrain_set_featx_sparse = convert_to_sparse_combine(ntrain_set_featx[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],n_feats)                                       #Need to create a shared version
+                     train_model = theano.function(inputs=[index], outputs=cost,
+                                                   updates=updates,                                                                                                                     
+                                                   givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                                                               xfeat :  train_set_featx[index * batch_size:(index + 1) * batch_size],
+                                                               y: train_set_y[index * batch_size:(index + 1) * batch_size]})
+                 else:
+                     train_model = theano.function(inputs=[index], outputs=cost,
+                                                   updates=updates,
+                                                   givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                                                               y: train_set_y[index * batch_size:(index + 1) * batch_size]})
+
 
             n_train_batches = len(ntrain_set_x_sparse)/batch_size
             print >> sys.stderr, "Current learning rate:", learning_rate 
@@ -450,14 +528,16 @@ def train_mlp(NNLMdata,OldParams,ngram,N,P,H,learning_rate, L1_reg, L2_reg, n_ep
                                'best model %f %%') %
                               (epoch, minibatch_index + 1, n_train_batches,
                                test_score))
-                    if adaptive_learning_rate:
-                        learning_rate = float(learning_rate0)/(1 + float(iter*epsilon))
+
 
             gc.collect()
             del train_set_x
             if ngram==3:
                 del train_set_x1
             del train_set_y
+        if adaptive_learning_rate:
+            learning_rate = float(learning_rate0)/(1 + float(iter*epsilon))
+
         fl = 'stoppage'
         stop=0
         for sl in open(fl,'r'):
