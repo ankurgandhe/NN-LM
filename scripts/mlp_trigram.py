@@ -38,8 +38,10 @@ from numpy import *
 from logistic_sgd7 import LogisticRegression
 from NNLMio import write_params_matlab
 
+copy_size=50000
+
 class ProjectionLayer_2gram(object):
-    def __init__(self, rng, input, n_in, n_out, N=4096, W=None,
+    def __init__(self, rng, input, feature,n_feat, n_in, n_out, N=4096, W=None,
                  sparse=None,activation=None):
         self.input = input
         
@@ -60,13 +62,16 @@ class ProjectionLayer_2gram(object):
         self.W = W
 
         lin_output = T.dot(self.input, self.W)
-        self.output = lin_output
+        if n_feat ==0:
+            self.output = lin_output
+        else:
+            self.output = T.concatenate((lin_output,feature),axis=1)
 
         # parameters of the model
         self.params = [self.W]
  
 class ProjectionLayer_3gram(object):
-    def __init__(self, rng, input, history1, n_in, n_out, N=4096, W=None,
+    def __init__(self, rng, input, history1, feature,n_feat, n_in, n_out, N=4096, W=None,
                  sparse=None,activation=None):
 
         self.input = input
@@ -87,7 +92,10 @@ class ProjectionLayer_3gram(object):
         self.W = W
         
         lin_output = T.concatenate((T.dot(self.input, self.W),T.dot(history1,self.W)),axis=1)
-        self.output = lin_output
+        if n_feat==0:
+            self.output = lin_output
+        else:
+            self.output = T.concatenate((lin_output,feature),axis=1)
         # parameters of the model
         self.params = [self.W]
 
@@ -136,12 +144,12 @@ class MLP(object):
         #def __init__(self, rng, input, history1, n_in,n_P, n_hidden, n_out,Voc,ngram):
         
         if ngram==3:
-            self.projectionLayer = ProjectionLayer_3gram(rng=rng, input=input, history1=history1, n_in=1, n_out=n_P, W=pW, N=Voc,activation=None)
+            self.projectionLayer = ProjectionLayer_3gram(rng=rng, input=input, history1=history1, feature=feature,n_feat = n_features, n_in=1, n_out=n_P, W=pW, N=Voc,activation=None)
         else:
-            self.projectionLayer = ProjectionLayer_2gram(rng=rng, input=input,n_in=1, n_out=n_P, W=pW, N=Voc,activation=None)
+            self.projectionLayer = ProjectionLayer_2gram(rng=rng, input=input, feature=feature,n_feat = n_features, n_in=1, n_out=n_P, W=pW, N=Voc,activation=None)
 
         self.hiddenLayer = HiddenLayer(rng=rng, input=self.projectionLayer.output,
-                                       n_in=n_P*(ngram-1), n_out=n_hidden,
+                                       n_in=n_P*(ngram-1)+n_features, n_out=n_hidden,
                                        activation=T.tanh,W=hW,b=hB)
         # The logistic regression layer gets as input the hidden units
         # of the hidden layer
@@ -212,7 +220,7 @@ def convert_to_sparse_combine(x,x1,N=4096):
         if i1>=N:
             i1=2
         y[i]=1
-        y[i2]=1
+        y[i1]=1
         z=y
         data.append(z)
     
@@ -236,21 +244,27 @@ def shared_dataset(data_xy, ngram,borrow=False):
                                   borrow=borrow)
         shared_y = theano.shared(numpy.asarray(data_y,dtype=theano.config.floatX),
                              borrow=borrow)
-    else:
+    elif ngram==2:
         data_x, data_y = data_xy
         shared_x = theano.shared(numpy.asarray(data_x,dtype=theano.config.floatX),
                                  borrow=borrow)
         shared_y = theano.shared(numpy.asarray(data_y,dtype=theano.config.floatX),
                              borrow=borrow)
-
+    else:
+        data_x = data_xy 
+        shared_x = theano.shared(numpy.asarray(data_x,dtype=theano.config.floatX),
+                                 borrow=borrow)
+       
     if ngram==3:
         return shared_x, shared_x1, T.cast(shared_y, 'int32')
-    else:
+    elif ngram==2:
         return shared_x, T.cast(shared_y, 'int32')
+    else:
+        return shared_x 
 
 def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
             
-    copy_size=75000
+    #copy_size=50000
     learning_rate0 = learning_rate 
     if ngram==3:
         ntrain_set_x,  ntrain_set_x1, ntrain_set_y = NNLMdata[0]
@@ -271,8 +285,10 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate,
             ntest_set_featx, ntest_set_featx1, ntest_set_featy = NNLMFeatData[2]
 
             nvalid_set_featx  = convert_to_sparse_combine(nvalid_set_featx,nvalid_set_featx1,n_feats)
-
             ntest_set_featx  = convert_to_sparse_combine(ntest_set_featx,ntest_set_featx1,n_feats)            
+
+            valid_set_featx = shared_dataset(nvalid_set_featx,1)
+            test_set_featx = shared_dataset(ntest_set_featx,1)
             #need a shared verions of this data 
             
         tot_train_size = len(ntrain_set_x)
@@ -361,6 +377,8 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate,
             ntest_set_featx  = convert_to_sparse(ntest_set_featx,n_feats)
 
             #need to create a shared version
+            valid_set_featx = shared_dataset(nvalid_set_featx,1)
+            test_set_featx = shared_dataset(ntest_set_featx,1)
 
 
         index = T.lscalar()    # index to a [mini]batch
@@ -390,7 +408,20 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate,
                                              outputs=classifier.tot_ppl(y),
                                              givens={x: valid_set_x[index * batch_size:(index + 1) * batch_size],
                                                      y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
+        else:
+            test_model = theano.function(inputs=[index],
+                                         outputs=classifier.tot_ppl(y),
+                                         givens={ x: test_set_x[index * batch_size:(index + 1) * batch_size],
+                                                  xfeat: test_set_featx[index * batch_size:(index + 1) * batch_size],
+                                                  y: test_set_y[index * batch_size:(index + 1) * batch_size]})
             
+            validate_model = theano.function(inputs=[index],
+                                             outputs=classifier.tot_ppl(y),
+                                             givens={x: valid_set_x[index * batch_size:(index + 1) * batch_size],
+                                                     xfeat: valid_set_featx[index * batch_size:(index + 1) * batch_size],
+                                                     y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
+
+           
         final_weights = theano.function(inputs=[], outputs=[classifier.get_params_pW(),classifier.get_params_hW(),classifier.get_params_hb(),
                                                             classifier.get_params_lW(),classifier.get_params_lb(),classifier.get_params_lW2(),classifier.get_params_lb2()])
   
@@ -421,9 +452,9 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate,
     patience = 100000  # look as this many examples regardless
     patience_increase = 10  # wait this much longer when a new best is
                            # found
-    improvement_threshold = 0.995  # a relative improvement of this much is
+    improvement_threshold = 0.998  # a relative improvement of this much is
                                    # considered significant
-    epsilon = (1-improvement_threshold) *0.1; #parameter for adaptive learning rate 
+    epsilon = (1-improvement_threshold) *0.05; #parameter for adaptive learning rate 
     validation_frequency = min(n_train_batches, patience / 2)
                                   # go through this many
                                   # minibatche before checking the network
@@ -444,6 +475,10 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate,
     while (epoch < n_epochs) and (not done_looping):
         epoch = epoch + 1
         totcost=0
+	updates = {}
+	for param, gparam in zip(classifier.params, gparams):
+            updates[param] = param - learning_rate * gparam
+
         for parts_index in range(n_train_parts):
             #convert training integers into 1-of-N vectors
             if ngram==3:
@@ -453,8 +488,10 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate,
                 train_set_x, train_set_x1,train_set_y = shared_dataset((ntrain_set_x_sparse, ntrain_set_x1_sparse, 
                                                                         ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)]),ngram)
                 if n_feats > 0:
-                    ntrain_set_featx_sparse = convert_to_sparse_combine(ntrain_set_featx[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],n_feats)
-                     #Need to create a shared version
+                    ntrain_set_featx_sparse = convert_to_sparse_combine(ntrain_set_featx[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],
+                                                                        ntrain_set_featx1[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],n_feats)
+                    train_set_featx = shared_dataset(ntrain_set_featx_sparse,1)
+                    #Need to create a shared version
                     train_model = theano.function(inputs=[index], outputs=cost,                                                                      
                                                   updates=updates,                     
                                                   givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size], 
@@ -473,7 +510,9 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate,
                  ntrain_set_x_sparse = convert_to_sparse(ntrain_set_x[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],N)
                  train_set_x,train_set_y = shared_dataset((ntrain_set_x_sparse, ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)]),ngram)
                  if n_feats > 0:
-                     ntrain_set_featx_sparse = convert_to_sparse_combine(ntrain_set_featx[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],n_feats)                                       #Need to create a shared version
+                     ntrain_set_featx_sparse = convert_to_sparse(ntrain_set_featx[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],n_feats)
+                     #Need to create a shared version
+                     train_set_featx = shared_dataset(ntrain_set_featx_sparse,1)
                      train_model = theano.function(inputs=[index], outputs=cost,
                                                    updates=updates,                                                                                                                     
                                                    givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size],
@@ -536,7 +575,11 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate,
                 del train_set_x1
             del train_set_y
         if adaptive_learning_rate:
-            learning_rate = float(learning_rate0)/(1 + float(iter*epsilon))
+	    if learning_rate > 0.004:
+	        learning_rate = float(learning_rate0)/(1 + float(iter*epsilon))
+            else:
+		learning_rate = 0.005
+	
 
         fl = 'stoppage'
         stop=0

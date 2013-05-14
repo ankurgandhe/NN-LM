@@ -13,6 +13,7 @@ def ReadConfigFile(fConfig):
     for section in [ 'inputs', 'outputs','training_params' ]:
          if not (parser.has_section(section)):
              print '%s section does not exists' % (section) 
+	     print fConfig
              return False
          for value in RequiredValues[section]:
              if not parser.has_option(section, value):

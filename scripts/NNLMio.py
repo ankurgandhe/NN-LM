@@ -6,8 +6,8 @@ import scipy.io
 
 def load_alldata_from_file(train,dev,test,ngram,N=4096):
     train_set = load_data_from_file(train,ngram,N,2000000)
-    valid_set =load_data_from_file(dev,ngram,N,5000)
-    test_set =load_data_from_file(test,ngram,N,5000)
+    valid_set =load_data_from_file(dev,ngram,N,4000)
+    test_set =load_data_from_file(test,ngram,N,4000)
 
     rval = [train_set, valid_set, test_set]
 
@@ -16,8 +16,8 @@ def load_alldata_from_file(train,dev,test,ngram,N=4096):
 
 def load_alldata(trainList,devList,testList,ngram,N=4096):
     train_set = load_data(trainList,ngram,N,2000000)
-    valid_set =load_data(devList,ngram,N,5000)
-    test_set =load_data(testList,ngram,N,5000)
+    valid_set =load_data(devList,ngram,N,4000)
+    test_set =load_data(testList,ngram,N,4000)
 
     rval = [train_set, valid_set, test_set]
     

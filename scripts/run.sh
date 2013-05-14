@@ -1,4 +1,4 @@
-if [[ $# -ne 2 ]]; then
+if [ $# -ne 2 ]; then
 	echo "Usage: sh run.sh config-file gpu'n'"
 	echo "eg: sh run.sh nnLM_config.ini gpu0"
 	exit 
