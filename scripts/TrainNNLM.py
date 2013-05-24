@@ -1,8 +1,9 @@
 import sys 
+sys.dont_write_bytecode = True
 from ReadConfig  import * 
 from Corpus import CreateData 
 from NNLMio import *
-from mlp_trigram import train_mlp
+from mlp_ngram import train_mlp
 
 
 def print_params(foldparam,ngram,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
@@ -44,13 +45,13 @@ def train_nnlm(params):
     batch_size= params['batch_size']
     adaptive_learning_rate = params['use_adaptive']
     fparam = params['foutparam']
-
+    write_janus = params['write_janus']	
     print >> sys.stderr, 'Reading Training File: ' , ftrain
-    TrainData = CreateData(ftrain,fvocab,ffreq,ngram,add_unk,use_unk)
+    TrainData,N_input_layer,N_unk = CreateData(ftrain,fvocab,ffreq,ngram,add_unk,use_unk)
     print >> sys.stderr, 'Reading Training File: ' , fdev
-    DevData = CreateData(fdev,fvocab,ffreq,ngram,False,use_unk)
+    DevData,N_input_layer,N_unk = CreateData(fdev,fvocab,ffreq,ngram,False,use_unk)
     print >> sys.stderr, 'Reading Training File: ' , ftest
-    TestData = CreateData(ftest,fvocab,ffreq,ngram,False,use_unk)
+    TestData,N_input_layer,N_unk = CreateData(ftest,fvocab,ffreq,ngram,False,use_unk)
     if params['write_ngram_files']:
         WriteData(TrainData, ftrain+'.'+str(ngram)+'g')
         WriteData(DevData, fdev+'.'+str(ngram)+'g')
@@ -73,8 +74,11 @@ def train_nnlm(params):
         OldParams = False 
     
     print_params(foldmodel,ngram,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
-    train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
-
+    print >> sys.stderr, "singletons:", N_unk
+    train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_unk,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
+     
+    if write_janus == True:
+	write_janus_LM(fvocab,fparam,params['srilm'])
     return 1
 
 if __name__ == '__main__':

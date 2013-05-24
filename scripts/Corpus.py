@@ -12,7 +12,7 @@ def CreateData(ftrain,fvocab,fvocabfreq,ngram,add_unk,use_unk):
         if UNKw==[]:
             add_unk=False
             use_unk=False
-    (WordID,printMapFile) = ReadVocabFile(fvocab)
+    (WordID,printMapFile) = ReadVocabFile(fvocab,UNKw,use_unk)
     if printMapFile:
         fwrite = open(fvocab+".nnid",'w')
         for w in sorted(WordID, key=WordID.get):
@@ -21,13 +21,17 @@ def CreateData(ftrain,fvocab,fvocabfreq,ngram,add_unk,use_unk):
     if add_unk:
         TrainingData = PrepareData_UNK(ftrain,ngram,WordID,UNKw)
     elif use_unk:
-        TrainingData = PrepareData_UNK(ftrain,ngram,WordID,UNKw)
+        TrainingData = PrepareData(ftrain,ngram,WordID)
     else:
         TrainingData = PrepareData(ftrain,ngram,WordID)
-    
-    return TrainingData
+    N_Vocab = max(WordID.itervalues())+2
+    if use_unk == True:
+    	N_UNKw  = len(UNKw)
+    else:
+	N_UNKw = 0 
+    return TrainingData,N_Vocab,N_UNKw
 
-def ReadVocabFile(fp):
+def ReadVocabFile(fp,UNKw,use_unk):
     WordID={}
     WordID['<s>']=0
     WordID['</s>']=1
@@ -43,6 +47,9 @@ def ReadVocabFile(fp):
             printMap = False
         if idx>0:
             w=l[0].strip()
+	    #if w in UNKw and use_unk==True:
+		#WordID[w]=WordID['<UNK>']
+		#continue 
             WordID[w]=idx
             idx=idx+1
         else:
@@ -96,12 +103,12 @@ def PrepareData_UNK(ftrain,ngram,WordID,UNKw):
             if foundUNK==1:
                 for hw in history[len(history)-ngram:]:
                     if hw in UNKw:
-                        strLine=strLine+"2"+' '
+                        strLine=strLine+str(WordID["<UNK>"])+' '
                     else:
                         strLine = strLine+str(WordID[hw])+" "
         
                 if w in UNKw:
-                    strLine=strLine+"2"
+                    strLine=strLine+str(WordID["<UNK>"])
                 else:
                     strLine=strLine+str(WordID[w])
                 TrainingData.append(strLine)
@@ -123,6 +130,7 @@ def PrepareData(ftrain,ngram,WordID):
     ngram = ngram -1
     TrainingData=[]
     strLine=""
+    N_unks = 0 
     for l in open(ftrain):
         l=l.strip()
         history = ["<s>","<s>","<s>","<s>"]
@@ -132,6 +140,8 @@ def PrepareData(ftrain,ngram,WordID):
                 strLine = strLine+str(WordID[hw])+" "
             if w  not in WordID:
                 w="<UNK>"
+	    if WordID[w] == WordID["<UNK>"]:
+		N_unks = N_unks + 1 
             strLine = strLine+str(WordID[w])
             TrainingData.append(strLine)
             strLine = ""
@@ -146,6 +156,7 @@ def PrepareData(ftrain,ngram,WordID):
             strLine = strLine+str(WordID[hw])+" "
         strLine = strLine+str(WordID[w])
         TrainingData.append(strLine)
+    print >> sys.stderr, "Number of UNKs encountered:", N_unks 
     return TrainingData
 
 def CreateFeatData(ffeat,ftrain,fvocab,fvocabfreq,ngram,add_unk,use_unk):

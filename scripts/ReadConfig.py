@@ -3,7 +3,7 @@ from ConfigParser import SafeConfigParser
 import os
 RequiredValues = {'inputs':['train_file','dev_file','test_file','vocab_file','vocab_freq_file'],
                   'outputs':['output_model_dir'],
-                  'training_params': ['ngram','input_layer_size','projection_layer_size']}
+                  'training_params': ['ngram','projection_layer_size']}
 
 params = {}
 def ReadConfigFile(fConfig):
@@ -69,8 +69,11 @@ def ReadConfigFile(fConfig):
     value = parser.getint('training_params', 'ngram')
     ngram = value
     params['ngram']=value
-    value = parser.getint('training_params', 'input_layer_size')
-    N = value
+    if parser.has_option('training_params','input_layer_size'):
+    	value = parser.getint('training_params', 'input_layer_size')
+    
+    else:
+	value = -1	
     params['N']=value
     value = parser.getint('training_params', 'projection_layer_size')
     P = value 
@@ -136,6 +139,15 @@ def ReadConfigFile(fConfig):
     else:
         batch_size = 50
         params['batch_size']=50
+
+    if parser.has_option('outputs','write_janus'):
+	write_janus = parser.getboolean('outputs','write_janus')
+	fsrilm  = parser.get('outputs','srilm').strip('"')
+        params['write_janus']= write_janus
+	params['srilm']=fsrilm
+    else:
+        write_janus = False
+        params['write_janus']=False
 
     return  params
 #return (ftrain,fdev,ftest,fvocab,fmodel,foutparam,N,P,H,add_unk,use_unk,use_adaptive)

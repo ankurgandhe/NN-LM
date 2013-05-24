@@ -1,4 +1,5 @@
-
+import sys 
+sys.dont_write_bytecode = True
 import cPickle
 import gzip
 import os
@@ -250,7 +251,7 @@ def test_mlp(learning_rate=0.005, L1_reg=0.00, L2_reg=0.0001, n_epochs=50, batch
     ngram = 2
     copy_size=10000
     N,P,paramindir, test, outfile,a,b= sys.argv[1:] # data/train.txt.fmt, out/y.probs
-    N = int(N)+10
+    N = int(N)
     P = int(P)
     outfile = outfile+'.'+a
     dataset = load_data2(test,ngram,N,float(a),float(b))

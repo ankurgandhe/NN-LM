@@ -1,6 +1,6 @@
 import sys 
 fclass, fvocid, fNgramData = sys.argv[1:]
-cid=1
+cid=0
 classMap={}
 Class={}
 print >> sys.stderr,"Class file format: word<TAB>classid"

@@ -26,8 +26,9 @@ def load_alldata(trainList,devList,testList,ngram,N=4096):
 
 def load_data_from_file(dataset,ngram,N=4096,maxS=10000):
     DataA={}
-    DataA[0]=[]
-    DataA[1]=[]
+    for i in range(ngram-1):
+        DataA[i]=[]
+
     TargetA=[]
     tot=0
     for l in open(dataset):
@@ -57,19 +58,15 @@ def load_data_from_file(dataset,ngram,N=4096,maxS=10000):
             break
 
     TargetA1 = numpy.asarray(TargetA,dtype=numpy.int32).reshape(-1)
-    if ngram==3:
-        print >> sys.stderr, "\nRead",tot,"tri-grams"
-        return ((DataA[0],DataA[1],TargetA1))
-    else:
-        print >> sys.stderr, "\nRead",tot,"bi-grams"
-        return ((DataA[0],TargetA1))
-    
+    print >> sys.stderr, "\nRead",tot,ngram,"-grams"
+    return [DataA[i] for i in range(ngram-1)],TargetA1
 
 
 def load_data(dataList,ngram,N=4096,maxS=10000):
     DataA={}
-    DataA[0]=[]
-    DataA[1]=[]
+    for i in range(ngram-1):
+        DataA[i]=[]
+        #DataA[1]=[]
     TargetA=[]
     tot=0
     for l in dataList:
@@ -98,14 +95,10 @@ def load_data(dataList,ngram,N=4096,maxS=10000):
         if tot == maxS:
             break
 
-    
     TargetA1 = numpy.asarray(TargetA,dtype=numpy.int32).reshape(-1)
-    if ngram==3:
-        print >> sys.stderr, "\nRead",tot,"tri-grams"
-        return ((DataA[0],DataA[1],TargetA1))
-    else:
-        print >> sys.stderr, "\nRead",tot,"bi-grams"
-        return ((DataA[0],TargetA1))
+    print >> sys.stderr, "\nRead",tot,ngram,"-grams"
+    return [DataA[i] for i in range(ngram-1)],TargetA1
+
 
 def load_params_matlab(fparam):
     print >> sys.stderr, "Reading matlab files from dir : ",fparam

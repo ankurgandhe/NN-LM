@@ -176,10 +176,10 @@ class MLP(object):
         # logistic regression layer
         self.negative_log_likelihood = self.logRegressionLayer.negative_log_likelihood
         # same holds for the function computing the number of errors
-	#self.errors = self.logRegressionLayer.errors
+        self.errors = self.logRegressionLayer.errors
         self.tot_ppl = self.logRegressionLayer.tot_ppl
-        #self.print_prob = self.logRegressionLayer.print_prob
-        #self.get_p_y_given_x = self.logRegressionLayer.get_p_y_given_x
+        self.print_prob = self.logRegressionLayer.print_prob
+        self.get_p_y_given_x = self.logRegressionLayer.get_p_y_given_x
         # the parameters of the model are the parameters of the two layer it is
         # made out o
         
@@ -262,38 +262,12 @@ def shared_dataset(data_xy, ngram,borrow=False):
     else:
         return shared_x 
 
-def GetPenaltyVector(y,penalty,Wids):
-    # Wids = list of words that need to be penalized with penalty
-    vec_penalty  = zeros(len(y ))
-    i  = 0
-    #penalty = 0.001 
-    count = 0
-    while i < len(vec_penalty):
-        if y[i] in Wids: 
-            vec_penalty[i]=penalty
-	    count = count + 1
-        else:
-            vec_penalty[i]=1
-        i=i+1
-        
-        vec_penalty_shared  =  theano.shared(numpy.asarray(vec_penalty,
-                                           dtype=theano.config.floatX),
-                             borrow=True)
-    print >> sys.stderr, "Penalized ",count," words", "with penalty", penalty 
-    return vec_penalty_shared
-
-
-def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
+def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N,P,H,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
             
     #copy_size=50000
-    learning_rate0 = learning_rate
-    if n_unk > 0:
-	rev_n_unk  = n_unk #1./n_unk 
-    else:
-	rev_n_unk  = 1
-    UNKw = []
+    learning_rate0 = learning_rate 
     if ngram==3:
-        ntrain_set_x, ntrain_set_x1, ntrain_set_y = NNLMdata[0]
+        ntrain_set_x,  ntrain_set_x1, ntrain_set_y = NNLMdata[0]
         nvalid_set_x, nvalid_set_x1, nvalid_set_y = NNLMdata[1]
         ntest_set_x, ntest_set_x1, ntest_set_y = NNLMdata[2]
                
@@ -315,14 +289,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
 
             valid_set_featx = shared_dataset(nvalid_set_featx,1)
             test_set_featx = shared_dataset(ntest_set_featx,1)
-
-        if n_unk > -1:
-            UNKw.append(2)
-            valid_error_penalty = GetPenaltyVector(nvalid_set_y,rev_n_unk,UNKw)
-            test_error_penalty  = GetPenaltyVector(ntest_set_y,rev_n_unk,UNKw)
-        else:
-            valid_error_penalty = []
-            test_error_penalty = [] 
+            #need a shared verions of this data 
             
         tot_train_size = len(ntrain_set_x)
         
@@ -337,7 +304,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
         x1 = T.matrix('x1')
         xfeat = T.matrix('xfeat') # if we hav features 
         y = T.ivector('y')  # the labels are presented as 1D vector of
-        error_penalty = T.fvector('error_penalty') # In case some word are more important than others, we give them additional penalty. Leave as [] for uniform penalty
+                            
         rng = numpy.random.RandomState(1234)
     
         # construct the MLP class
@@ -350,7 +317,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
         # the cost we minimize during training is the negative log likelihood of
         # the model plus the regularization terms (L1 and L2); cost is expressed
         # here symbolically
-        cost = classifier.negative_log_likelihood(y,error_penalty) \
+        cost = classifier.negative_log_likelihood(y) \
             + L1_reg * classifier.L1 \
             + L2_reg * classifier.L2_sqr
 
@@ -358,35 +325,32 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
         # by the model on a minibatch
         if n_feats==0:
             test_model = theano.function(inputs=[index],
-                                         outputs=classifier.tot_ppl(y,error_penalty),
+                                         outputs=classifier.tot_ppl(y),
                                          givens={ x: test_set_x[index * batch_size:(index + 1) * batch_size],
                                                   x1: test_set_x1[index * batch_size:(index + 1) * batch_size],
-                                                  y: test_set_y[index * batch_size:(index + 1) * batch_size],
-                                                  error_penalty: test_error_penalty[index * batch_size:(index + 1) * batch_size] })
+                                                  y: test_set_y[index * batch_size:(index + 1) * batch_size]})
     
 
             validate_model = theano.function(inputs=[index],
-                                             outputs=classifier.tot_ppl(y,error_penalty),
+                                             outputs=classifier.tot_ppl(y),
                                              givens={x: valid_set_x[index * batch_size:(index + 1) * batch_size],
                                                      x1: valid_set_x1[index * batch_size:(index + 1) * batch_size],
-                                                     y: valid_set_y[index * batch_size:(index + 1) * batch_size],
-                                                     error_penalty: valid_error_penalty[index * batch_size:(index + 1) * batch_size] })
+                                                     y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
         else:
             test_model = theano.function(inputs=[index],
-                                         outputs=classifier.tot_ppl(y,error_penalty),
+                                         outputs=classifier.tot_ppl(y),
                                          givens={ x: test_set_x[index * batch_size:(index + 1) * batch_size],
                                                   x1: test_set_x1[index * batch_size:(index + 1) * batch_size],
                                                   xfeat:  test_set_featx[index * batch_size:(index + 1) * batch_size],
                                                   y: test_set_y[index * batch_size:(index + 1) * batch_size]})
-                                                  #error_penalty: test_error_penalty[index * batch_size:(index + 1) * batch_size] })
+
 
             validate_model = theano.function(inputs=[index],
-                                             outputs=classifier.tot_ppl(y,error_penalty),
+                                             outputs=classifier.tot_ppl(y),
                                              givens={x: valid_set_x[index * batch_size:(index + 1) * batch_size],
                                                      x1: valid_set_x1[index * batch_size:(index + 1) * batch_size],
                                                      xfeat:  test_set_featx[index * batch_size:(index + 1) * batch_size],
                                                      y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
-                                                     #error_penalty: valid_error_penalty[index * batch_size:(index + 1) * batch_size] })
             
         final_weights = theano.function(inputs=[], outputs=[classifier.get_params_pW(),classifier.get_params_hW(),classifier.get_params_hb(),
                                                                 classifier.get_params_lW(),classifier.get_params_lb(),classifier.get_params_lW2(),classifier.get_params_lb2()])
@@ -517,19 +481,12 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
 
         for parts_index in range(n_train_parts):
             #convert training integers into 1-of-N vectors
-	    
-
             if ngram==3:
                 
                 ntrain_set_x_sparse = convert_to_sparse(ntrain_set_x[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],N)
                 ntrain_set_x1_sparse = convert_to_sparse(ntrain_set_x1[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],N)
                 train_set_x, train_set_x1,train_set_y = shared_dataset((ntrain_set_x_sparse, ntrain_set_x1_sparse, 
                                                                         ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)]),ngram)
- 		if n_unk > -1:
-                    train_error_penalty = GetPenaltyVector(ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)],rev_n_unk,UNKw)
-		else:
-		    train_error_penalty = []
-
                 if n_feats > 0:
                     ntrain_set_featx_sparse = convert_to_sparse_combine(ntrain_set_featx[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],
                                                                         ntrain_set_featx1[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],n_feats)
@@ -540,15 +497,13 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
                                                   givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size], 
                                                               x1: train_set_x1[index * batch_size:(index + 1) * batch_size],
                                                               xfeat: train_set_featx[index * batch_size:(index + 1) * batch_size],
-                                                              y: train_set_y[index * batch_size:(index + 1) * batch_size],
-                                                              error_penalty: train_error_penalty[index * batch_size:(index + 1) * batch_size] })
+                                                              y: train_set_y[index * batch_size:(index + 1) * batch_size]})
                 else:
                     train_model = theano.function(inputs=[index], outputs=cost,
                                                   updates=updates,
                                                   givens={    x: train_set_x[index * batch_size:(index + 1) * batch_size],
                                                               x1: train_set_x1[index * batch_size:(index + 1) * batch_size],
-                                                              y: train_set_y[index * batch_size:(index + 1) * batch_size],
-                                                              error_penalty: train_error_penalty[index * batch_size:(index + 1) * batch_size] })
+                                                              y: train_set_y[index * batch_size:(index + 1) * batch_size]})
                     
                 
             else:

@@ -116,7 +116,6 @@ class LogisticRegression(object):
 	#self.p_y_given_x = T.concatenate([T.nnet.softmax(T.dot(input, self.W) + self.b) ,T.nnet.softmax(T.dot(input, self.W2) + self.b2)],axis=1)
 	self.lin_output1 = T.exp(T.dot(input, self.W) + self.b)
 	self.lin_output2 = T.exp(T.dot(input, self.W2) + self.b2)
-	#	self.ep_y_given_x = T.exp(self.lin_output); #elf.softmax(self.lin_output)
 
 	totals =  T.add(T.sum(self.lin_output1, axis=1).dimshuffle(0,'x'), T.sum(self.lin_output2,axis=1).dimshuffle(0,'x'))
 	self.p_y_given_x = T.concatenate([self.lin_output1/totals, self.lin_output2/totals],axis=1) 
@@ -131,18 +130,18 @@ class LogisticRegression(object):
         
     def get_p_y_given_x(self):
         return self.p_y_given_x
-    def get_p_y_given_x2(self,y):
-        return self.p_y_given_x[T.arange(y.shape[0]), y]
-
+    def get_p_y_given_x2(self,y,penalty=[]):
+	if penalty==[]:
+            return self.p_y_given_x[T.arange(y.shape[0]), y]		
+        else:
+            return self.p_y_given_x[T.arange(y.shape[0]), y]*penalty 
     def print_prob(self):
         return(T.log(self.p_y_given_x))
-        #get_p_y_given_x = theano.function(inputs=[x], outputs=p_y_given_x)
-        #print 'Probability that x is of class %i is %f' % (i, get_p_y_given_x(x_value)[i])
 
     def entropy(self, y):
         cst = T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
         return cst
-    def negative_log_likelihood(self, y):
+    def negative_log_likelihood(self, y,penalty=[]):
         """Return the mean of the negative log-likelihood of the prediction
         of this model under a given target distribution.
 
@@ -169,9 +168,15 @@ class LogisticRegression(object):
         # LP[n-1,y[n-1]]] and T.mean(LP[T.arange(y.shape[0]),y]) is
         # the mean (across minibatch examples) of the elements in v,
         # i.e., the mean log-likelihood across the minibatch.
-        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-    def tot_ppl(self, y):
-       return -T.mean(T.log10(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        if penalty==[]:
+            return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        else:
+            return -T.mean(T.log ( (self.p_y_given_x)[T.arange(y.shape[0]), y]*penalty) )
+    def tot_ppl(self, y,penalty=[]):
+        if penalty==[]:
+            return -T.mean(T.log10(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        else:
+            return -T.mean(T.log10( (self.p_y_given_x)[T.arange(y.shape[0]), y]*penalty) )
     def errors(self, y):
         """Return a float representing the number of errors in the minibatch
         over the total number of examples of the minibatch ; zero one
