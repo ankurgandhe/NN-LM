@@ -1,13 +1,14 @@
 import sys 
 sys.dont_write_bytecode = True
 from ReadConfig  import * 
-from Corpus import CreateData 
+from Corpus import CreateData,GetVocabAndUNK 
 from NNLMio import *
 from mlp_ngram import train_mlp
 
 
-def print_params(foldparam,ngram,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
+def print_params(foldparam,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
     print >> sys.stderr, "system parameters:"
+    print >> sys.stderr, "Ngram order : ", ngram
     print >> sys.stderr, "Vocab size:", N_input_layer
     print >> sys.stderr, "Projection layer:", P_projection_layer
     print >> sys.stderr, "Hidden layer:", H_hidden_layer
@@ -18,6 +19,30 @@ def print_params(foldparam,ngram,N_input_layer,P_projection_layer,H_hidden_layer
     print >> sys.stderr, "batch_size:", batch_size
     print >> sys.stderr, "old params dir:", foldparam
     print >> sys.stderr, "output dir:", fparam
+
+def write_machine(foldparam,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab):
+    outfp = open(fparam+"/mach.desc",'w')
+    print >> outfp, "system parameters:"
+    print >> outfp, "Ngram order : ", ngram
+    print >> outfp, "Vocab size:", N_input_layer
+    print >> outfp, "Projection layer:", P_projection_layer
+    print >> outfp, "Hidden layer:", H_hidden_layer
+    print >> outfp, "learning rate:", learning_rate, 
+    print >> outfp, "adaptive learning rate:", adaptive_learning_rate
+    print >> outfp, "Feature layer size:", n_feats
+    print >> outfp, "L1_reg:", L1_reg
+    print >> outfp, "L2_reg:",L2_reg
+    print >> outfp, "max epochs:", n_epochs
+    print >> outfp, "batch_size:", batch_size
+    print >> outfp, "old params dir:", foldparam
+    print >> outfp, "output dir:", fparam
+    if printMapFile:
+        fwrite = open(fparam+"/vocab.nnid",'w')
+        for w in sorted(WordID, key=WordID.get):
+            print >> fwrite, w,WordID[w]
+	print >> outfp, "Vocab map file:", fparam+"/vocab.nnid"
+    else:
+	print >> outfp, "Vocab map file:", fvocab 
 
 
 def train_nnlm(params):
@@ -46,19 +71,21 @@ def train_nnlm(params):
     adaptive_learning_rate = params['use_adaptive']
     fparam = params['foutparam']
     write_janus = params['write_janus']	
+
+    print >> sys.stderr, "Reading Vocab files", fvocab
+    WordID, UNKw,printMapFile = GetVocabAndUNK(fvocab,ffreq,ngram,add_unk,use_unk)
     print >> sys.stderr, 'Reading Training File: ' , ftrain
-    TrainData,N_input_layer,N_unk = CreateData(ftrain,fvocab,ffreq,ngram,add_unk,use_unk)
-    print >> sys.stderr, 'Reading Training File: ' , fdev
-    DevData,N_input_layer,N_unk = CreateData(fdev,fvocab,ffreq,ngram,False,use_unk)
-    print >> sys.stderr, 'Reading Training File: ' , ftest
-    TestData,N_input_layer,N_unk = CreateData(ftest,fvocab,ffreq,ngram,False,use_unk)
+    TrainData,N_input_layer,N_unk = CreateData(ftrain,WordID,UNKw,ngram,add_unk,use_unk)
+    print >> sys.stderr, 'Reading Dev File: ' , fdev
+    DevData,N_input_layer,N_unk = CreateData(fdev,WordID,UNKw,ngram,False,use_unk)
+    print >> sys.stderr, 'Reading Test File: ' , ftest
+    TestData,N_input_layer,N_unk = CreateData(ftest,WordID,UNKw,ngram,False,use_unk)
     if params['write_ngram_files']:
         WriteData(TrainData, ftrain+'.'+str(ngram)+'g')
         WriteData(DevData, fdev+'.'+str(ngram)+'g')
         WriteData(TestData, ftest+'.'+str(ngram)+'g')
         print >> sys.stderr, "ngrams file written... rerun with [ write_ngram_file = False ] for training"
-        sys.exit(1)
-
+	sys.exit(1)
     if ftrainfeat!="" and fdevfeat!="" and ftestfeat!="":
         print >> sys.stderr, 'Reading training, dev and test Feature Files ', ftrainfeat, fdevfeat, ftestfeat
         NNLMFeatData = load_alldata_from_file(ftrainfeat,fdevfeat,ftestfeat,ngram,n_feats)
@@ -73,12 +100,16 @@ def train_nnlm(params):
     else:
         OldParams = False 
     
-    print_params(foldmodel,ngram,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
+    print_params(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
+    write_machine(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab)
     print >> sys.stderr, "singletons:", N_unk
     train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_unk,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
      
     if write_janus == True:
-	write_janus_LM(fvocab,fparam,params['srilm'])
+	if printMapFile:
+		write_janus_LM(fparam+"/vocab.nnid",fparam,params['srilm'])
+	else:
+		write_janus_LM(fvocab,fparam,params['srilm'])
     return 1
 
 if __name__ == '__main__':

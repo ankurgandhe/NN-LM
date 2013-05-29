@@ -1,7 +1,7 @@
 import sys 
 history = ["<s>","<s>","<s>","<s>"]
 
-def CreateData(ftrain,fvocab,fvocabfreq,ngram,add_unk,use_unk):
+def GetVocabAndUNK(fvocab,fvocabfreq,ngram,add_unk,use_unk):
     UNKw=[]
     if (fvocabfreq.strip()==""):
         print >> sys.stderr, "frequency file not given"
@@ -13,22 +13,26 @@ def CreateData(ftrain,fvocab,fvocabfreq,ngram,add_unk,use_unk):
             add_unk=False
             use_unk=False
     (WordID,printMapFile) = ReadVocabFile(fvocab,UNKw,use_unk)
-    if printMapFile:
+    '''if printMapFile:
         fwrite = open(fvocab+".nnid",'w')
         for w in sorted(WordID, key=WordID.get):
-            print >> fwrite, w,WordID[w] 
-            
+            print >> fwrite, w,WordID[w]
+    '''
+    return WordID,UNKw,printMapFile
+     
+def CreateData(ftrain,WordID,UNKw,ngram,add_unk,use_unk):
     if add_unk:
         TrainingData = PrepareData_UNK(ftrain,ngram,WordID,UNKw)
     elif use_unk:
         TrainingData = PrepareData(ftrain,ngram,WordID)
     else:
         TrainingData = PrepareData(ftrain,ngram,WordID)
-    N_Vocab = max(WordID.itervalues())+2
+
+    N_Vocab = max(WordID.itervalues())+1
     if use_unk == True:
-    	N_UNKw  = len(UNKw)
+        N_UNKw  = len(UNKw)
     else:
-	N_UNKw = 0 
+        N_UNKw = 0
     return TrainingData,N_Vocab,N_UNKw
 
 def ReadVocabFile(fp,UNKw,use_unk):
@@ -47,9 +51,6 @@ def ReadVocabFile(fp,UNKw,use_unk):
             printMap = False
         if idx>0:
             w=l[0].strip()
-	    #if w in UNKw and use_unk==True:
-		#WordID[w]=WordID['<UNK>']
-		#continue 
             WordID[w]=idx
             idx=idx+1
         else:
@@ -183,3 +184,12 @@ def CreateFeatData(ffeat,ftrain,fvocab,fvocabfreq,ngram,add_unk,use_unk):
     else:
         TrainingData = PrepareData(ftrain,ngram,WordID)
 
+
+def ReadWordID(infile):
+    WordID = {}
+    for l in open(infile):
+	l=l.strip().split()
+	w = l[0].strip()
+	idx = int(l[1]	)
+	WordID[w]=idx
+    return WordID

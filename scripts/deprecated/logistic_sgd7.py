@@ -108,7 +108,8 @@ class LogisticRegression(object):
                                     name='b', borrow=True)
         else:
             self.b2 = theano.shared(value=b2, name='b2',borrow=True)
-                                  
+                         
+	         
              # compute vector of class-membership probabilities in symbolic form
         #self.lin_input =  T.dot(input, self.W)+self.b    #Ankur
         #self.input_split = T.split(input, [5000,5000],2) #Ankur

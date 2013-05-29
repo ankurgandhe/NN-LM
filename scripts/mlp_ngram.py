@@ -1,4 +1,4 @@
-0#With Proj units as input 
+#With Proj units as input 
 """
 This tutorial introduces the multilayer perceptron using Theano.
 
@@ -36,8 +36,9 @@ import theano.tensor as T
 from numpy import * 
 from theano import sparse as Tsparse 
 import scipy.sparse as sp 
-from logistic_sgd7 import LogisticRegression
-from NNLMio import write_params_matlab
+from logistic_sgd import LogisticRegression
+from NNLMio import write_params_matlab, read_machine,load_data,load_params_matlab,load_data_from_file
+from Corpus import CreateData
 
 copy_size=50000
 
@@ -58,8 +59,6 @@ class ProjectionLayer_ngram(object):
         else:
             w_values=W
             W = theano.shared(value=w_values, name='W',borrow=True)
-	#self.inp = numpy.zeros(input.ndim)
-	#self.inp[T.arange(input.shape[0]), input ] =1
 
         self.W = W
         lin_output = T.dot(self.input, self.W)
@@ -114,7 +113,7 @@ class MLP(object):
     that has one layer or more of hidden units and nonlinear activation
     """
     
-    def __init__(self, rng, input, nhistory, feature,n_features, n_in,n_P, n_hidden, n_out, ngram=3, Voc=4096,pW=None,hW=None,hB=None,lW=None,lB=None,lW2=None,lB2=None):
+    def __init__(self, rng, input, nhistory, feature,n_features, n_in,n_P, n_hidden, n_out, ngram=3, Voc=4096,pW=None,hW=None,hB=None,lW=None,lB=None):
         
         self.projectionLayer = ProjectionLayer_ngram(rng=rng, input=input, nhistory=nhistory, feature=feature, n_feat = n_features, n_in=1, n_out=n_P, W=pW, N=Voc,activation=None)
         self.hiddenLayer = HiddenLayer(rng=rng, input=self.projectionLayer.output,
@@ -125,20 +124,18 @@ class MLP(object):
 
         self.logRegressionLayer = LogisticRegression(input=self.hiddenLayer.output,
                                                      n_in=n_hidden,
-                                                     n_out=n_out,W=lW,b=lB,W2=lW2,b2=lB2)
+                                                     n_out=n_out,W=lW,b=lB)
 
         # L1 norm ; one regularization option is to enforce L1 norm to
         # be small
         self.L1 = abs(self.hiddenLayer.W).sum() \
-                + abs(self.logRegressionLayer.W).sum() \
-                + abs(self.logRegressionLayer.W2).sum()
+                + abs(self.logRegressionLayer.W).sum() 
 
 
         # square of L2 norm ; one regularization option is to enforce
         # square of L2 norm to be small
         self.L2_sqr = (self.hiddenLayer.W ** 2).sum() \
                     + (self.logRegressionLayer.W ** 2).sum() \
-                    + (self.logRegressionLayer.W ** 2).sum()
 
 
         # negative log likelihood of the MLP is given by the negative
@@ -148,7 +145,7 @@ class MLP(object):
         # same holds for the function computing the number of errors
 
         self.tot_ppl = self.logRegressionLayer.tot_ppl
-
+        self.get_p_y_given_x = self.logRegressionLayer.get_p_y_given_x2
         # the parameters of the model are the parameters of the two layer it is
         # made out o
         
@@ -164,35 +161,29 @@ class MLP(object):
         return self.logRegressionLayer.W 
     def get_params_lb(self):
         return self.logRegressionLayer.b
-    def get_params_lW2(self):
-        return self.logRegressionLayer.W2
-    def get_params_lb2(self):
-        return self.logRegressionLayer.b2
 
 def convert_to_sparse(x,N=4096):
-    data=[]
+    data = zeros((len(x),N),dtype=theano.config.floatX)
+    n = 0
     for i in x:
-        y = zeros((N),dtype=theano.config.floatX)
         if i >=N:
             i=2
-        y[i]=1
-        z=y
-        data.append(z)
-    return data 
+        data[n][i] = 1
+	n = n+1
+    return data
 
 def convert_to_sparse_combine(Listx,N=4096,a=0,b=1e20):
     data=[]
     b = min(b,len(Listx[0]))
+    data = zeros((b-a,N),dtype=theano.config.floatX)
 
     for n in range(a,b):
-        y = zeros((N),dtype=theano.config.floatX)
         for x in Listx:
             i = x[n]
             if i >=N:
                 i=2
-            y[i]=1
-        z=y
-        data.append(z)
+            data[n][i]=1
+        
     return data
 
 def shared_data(data,type="float",sparse=False,borrow=False):
@@ -228,6 +219,15 @@ def GetPenaltyVector(y,penalty,Wids):
     print >> sys.stderr, "Penalized ",count," words", "with penalty", penalty 
     return vec_penalty_shared
 
+def shuffle_in_unison_inplace(a, b):
+    assert len(a[0]) == len(b)
+    p = numpy.random.shuffle( numpy.arange(len(b)))
+    i =0 	
+    newa = [] 
+    for x in a:
+	newa.append(x[p])
+	i = i+1 
+    return newa, b
 
 def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
             
@@ -303,21 +303,22 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
     rng = numpy.random.RandomState(1234)
     # construct the MLP class
     if OldParams:
-        pW,hW,hB,lB,lB2,lW,lW2 = OldParams
+        pW,hW,hB,lB,lW = OldParams
+	learning_rate = 0.05
     else:
-        pW = hW = hB = lB = lB2 = lW = lW2 = None
+        pW = hW = hB = lB =  lW =  None
     if ngram==2:
-        classifier = MLP(rng=rng, input=x1, nhistory = [] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
+        classifier = MLP(rng=rng, input=x1, nhistory = [] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
     elif ngram==3:
-        classifier = MLP(rng=rng, input=x1, nhistory = [x2] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
     elif ngram==4:
-        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
     elif ngram==5:
-        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
     elif ngram==6:
-        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4,x5] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4,x5] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
     elif ngram==7:
-        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4,x5,x6] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lW2=lW2,lB=lB,lB2=lB2)
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4,x5,x6] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
 
     # the cost we minimize during training is the negative log likelihood of
     # the model plus the regularization terms (L1 and L2); cost is expressed
@@ -333,7 +334,6 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
 
     # compiling a Theano function that computes the mistakes that are made
     # by the model on a minibatch
-    print >> sys.stderr, "ngram:", ngram
     
     Tgivens = {}
     Tgivens[x1]= test_set_x_sparse[0][index * batch_size:(index + 1) * batch_size]
@@ -370,7 +370,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
                                      givens= Tgivens ) 
 
     final_weights = theano.function(inputs=[], outputs=[classifier.get_params_pW(),classifier.get_params_hW(),classifier.get_params_hb(),
-                                                        classifier.get_params_lW(),classifier.get_params_lb(),classifier.get_params_lW2(),classifier.get_params_lb2()])
+                                                        classifier.get_params_lW(),classifier.get_params_lb()])
 
     # Get counts etc... 
     tot_train_size = len(ntrain_set_y)    
@@ -416,18 +416,18 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
     done_looping = False    
     
     print >> sys.stderr, "Training parts:", n_train_parts,",Copy size:",copy_size,",Total training size:",tot_train_size
-    pW,hW,hB,lW,lB,lW2,lB2 = final_weights() 
+    pW,hW,hB,lW,lB = final_weights() 
 
     #share training y , training features 
     train_set_y = shared_data(ntrain_set_y,"int")
     if n_feats>0:
         train_set_featx_sparse  = shared_data(convert_to_sparse_combine(ntrain_set_featx,n_feats))
-
+ 
     #convert training data to numpy arrays.
     train_set_x_sparse_notshared = [] 
     for train_set_xi in ntrain_set_x:
         train_x = convert_to_sparse(train_set_xi,N)
-        train_set_x_sparse_notshared.append(numpy.asarray(train_x,dtype=theano.config.floatX))
+        train_set_x_sparse_notshared.append(train_x)
 
     while (epoch < n_epochs) and (not done_looping):
         epoch = epoch + 1
@@ -437,6 +437,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
             updates[param] = param - learning_rate * gparam
 
         print >> sys.stderr, "Current learning rate:", learning_rate
+	train_set_y = shared_data(ntrain_set_y,"int")
         for parts_index in range(n_train_parts):
 
             #convert training integers  1-of-N vectors into shared objects 
@@ -473,7 +474,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
             
             n_train_batches = len(ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)])/batch_size
            
-            print >> sys.stderr, "Training part:", parts_index 
+            print >> sys.stderr, "Training part:", parts_index+1 ,"of",n_train_parts
             for minibatch_index in xrange(n_train_batches):
 		validation_frequency = min(n_train_batches, patience / 2)
                 if minibatch_index * batch_size > len(ntrain_set_y):
@@ -508,7 +509,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
                         test_losses = [test_model(i) for i
                                        in xrange(n_test_batches)]
                         test_score = numpy.power(10, numpy.mean(test_losses))
-			pW,hW,hB,lW,lB,lW2,lB2 = final_weights()
+			pW,hW,hB,lW,lB = final_weights()
 
                         print >> sys.stderr, (('     epoch %i, minibatch %i/%i, test error of '
                                'best model %f %%') %
@@ -545,9 +546,99 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
     
-    write_params_matlab(fparam,pW,hW,hB,lB,lB2,lW,lW2)
+    write_params_matlab(fparam,pW,hW,hB,lB,lW)
 
 
+
+def test_mlp(testfile,testfeat,paramdir,outfile="", batch_size=50):
+
+    if outfile == "":
+	outfile = testfile+".prob" 
+    ngram,n_feats,N,P,H,WordID = read_machine(paramdir) 
+    TestData,N_input_layer,N_unk = CreateData(testfile,WordID,[],ngram,False,False) 
+    NNLMdata = load_data(TestData,ngram,N)
+    if n_feats > 0:
+	if testfeat=="None":
+	     print >> sys.stderr, "number of feats", n_feats," but feature file not provided. Exiting" 
+	     sys.exit(1)
+	NNLMFeatData = load_data_from_file(testfeat,ngram,N) 
+        ntest_set_featx =  NNLMFeatData[0]
+        ntest_set_featy =  NNLMFeatData[1]
+        test_set_featx_sparse  = convert_to_sparse_combine(ntest_set_featx,n_feats)
+        #test_set_featy   = shared_data(ntest_set_featy,"int")
+
+    pW,hW,hB,lB,lW = load_params_matlab(paramdir)
+
+    ntest_set_x =  NNLMdata[0]
+    ntest_set_y =  NNLMdata[1]
+
+    # allocate symbolic variables for the data
+    index = T.lscalar()    # index to a [mini]batch
+    x1 = T.matrix('x1')  # the data is presented as rasterized images
+    x2 = T.matrix('x2')
+    x3 = T.matrix('x3')
+    x4 = T.matrix('x4')
+    x5 = T.matrix('x5')
+    x6 = T.matrix('x6')
+    xfeat = T.matrix('xfeat') # if we hav features
+    y = T.ivector('y')  # the labels are presented as 1D vector of
+    error_penalty = T.fvector('error_penalty') # In case some word are more important than others, we give them additional penalty. Leave as [] for uniform penalty
+
+    rng = numpy.random.RandomState(1234)
+    # construct the MLP class
+    if ngram==2:
+        classifier = MLP(rng=rng, input=x1, nhistory = [] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
+	probs_model_full = theano.function(inputs=[y, xfeat, x1], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
+    elif ngram==3:
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
+	probs_model_full = theano.function(inputs=[y, xfeat, x1,x2], outputs=[classifier.get_p_y_given_x(y),classifier.tot_ppl(y)], on_unused_input='warn')
+    elif ngram==4:
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
+        probs_model_full = theano.function(inputs=[y, xfeat, x1,x2,x3], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
+    elif ngram==5:
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
+        probs_model_full = theano.function(inputs=[y, xfeat, x1,x2,x3,x4], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
+    elif ngram==6:
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4,x5] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
+        probs_model_full = theano.function(inputs=[y, xfeat, x1,x2,x3,x4,x5], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
+    elif ngram==7:
+        classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4,x5,x6] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
+        probs_model_full = theano.function(inputs=[y, xfeat, x1,x2,x3,x4,x5,x6], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
+
+    #probs_model_full = theano.function(inputs=[  y], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
+
+    foutPF= open(outfile,'w')
+    gc.collect()
+    t = len(ntest_set_y)
+    if copy_size > t:
+        test_batches=1
+
+    else:
+        test_batches = t/copy_size + 1
+    test_ppls = []
+    for i in range(test_batches):
+	print >> sys.stderr,"running batch", i+1,"of ",test_batches 
+	x_sparse=[]
+	for set_x in ntest_set_x:
+            x = convert_to_sparse(set_x[i*copy_size: (i+1)*copy_size],N)
+  	    x_sparse.append(x)
+        y_test = ntest_set_y[i*copy_size : (i+1)*copy_size] 
+	if n_feats > 0:
+ 	    x_feat = test_set_featx_sparse[i * copy_size:(i + 1) * copy_size]
+	else:
+	    x_feat = [[],[]]
+        scores,loss =  probs_model_full(y_test,x_feat,*x_sparse) 
+	test_ppls.append(loss)
+	
+        for yl,y in zip(scores,y_test):
+	    if y==WordID['<UNK>']:
+		print >> foutPF, 0
+		continue
+            print >> foutPF, yl
+
+        gc.collect()
+    ppl = numpy.power(10, numpy.mean(test_ppls))
+    print "Perplexity with unks:",ppl 
         
 if __name__ == '__main__':
     test_mlp()

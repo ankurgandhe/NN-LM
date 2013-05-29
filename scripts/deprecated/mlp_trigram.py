@@ -201,14 +201,17 @@ class MLP(object):
         return self.logRegressionLayer.b2
 
 def convert_to_sparse(x,N=4096):
+    data = zeros((len(x),N),dtype=theano.config.floatX) 
     data=[]
+    n = 0 
     for i in x:
-        y = zeros((N),dtype=theano.config.floatX)
+        #y = zeros((N),dtype=theano.config.floatX)
         if i >=N:
             i=2
-        y[i]=1
-        z=y
-        data.append(z)
+        #y[i]=1
+	data[n][i] = 1
+        #z=y
+        #data.append(z)
     return data 
 
 def convert_to_sparse_combine(x,x1,N=4096):

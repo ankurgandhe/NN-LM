@@ -1,9 +1,11 @@
 import sys
+sys.dont_write_bytecode = True
 from numpy import zeros
 import numpy
 import theano 
 import scipy.io 
-
+from Corpus import ReadWordID
+from ConstructUnigram import ConstructUnigram 
 def load_alldata_from_file(train,dev,test,ngram,N=4096):
     train_set = load_data_from_file(train,ngram,N,2000000)
     valid_set =load_data_from_file(dev,ngram,N,4000)
@@ -24,7 +26,7 @@ def load_alldata(trainList,devList,testList,ngram,N=4096):
     return rval
 
 
-def load_data_from_file(dataset,ngram,N=4096,maxS=10000):
+def load_data_from_file(dataset,ngram,N=4096,maxS=200000):
     DataA={}
     for i in range(ngram-1):
         DataA[i]=[]
@@ -42,16 +44,11 @@ def load_data_from_file(dataset,ngram,N=4096,maxS=10000):
 
         l=l[0:len(l)-1]
         il = map(int,l)
-        y = zeros((N),dtype=theano.config.floatX)
-        z=[]
         idx=0
         for i in il:
-            y = zeros((N),dtype=theano.config.floatX)
             if i >=N:
                 i=2
-            y[i]=1
-            z=i
-            DataA[idx].append(z)
+            DataA[idx].append(i)
             idx=idx+1
         TargetA.append(target)
         if tot == maxS:
@@ -62,11 +59,11 @@ def load_data_from_file(dataset,ngram,N=4096,maxS=10000):
     return [DataA[i] for i in range(ngram-1)],TargetA1
 
 
-def load_data(dataList,ngram,N=4096,maxS=10000):
+def load_data(dataList,ngram,N=4096,maxS=200000):
     DataA={}
     for i in range(ngram-1):
         DataA[i]=[]
-        #DataA[1]=[]
+
     TargetA=[]
     tot=0
     for l in dataList:
@@ -80,16 +77,11 @@ def load_data(dataList,ngram,N=4096,maxS=10000):
 
         l=l[0:len(l)-1]
         il = map(int,l)
-        y = zeros((N),dtype=theano.config.floatX)
-        z=[]
         idx=0
         for i in il:
-            y = zeros((N),dtype=theano.config.floatX)
             if i >=N:
                 i=2
-            y[i]=1
-            z=i
-            DataA[idx].append(z)
+            DataA[idx].append(i)
             idx=idx+1
         TargetA.append(target)
         if tot == maxS:
@@ -106,10 +98,10 @@ def load_params_matlab(fparam):
     hW  = scipy.io.loadmat(fparam+'/hW.mat')['hW']
     hB  =  numpy.asarray(scipy.io.loadmat(fparam+'/hB.mat')['hB']).reshape(-1)
     lB  = numpy.asarray(scipy.io.loadmat(fparam+'/lB.mat')['lB']).reshape(-1)
-    lB2 = numpy.asarray(scipy.io.loadmat(fparam+'/lB2.mat')['lB2']).reshape(-1)
+    #lB2 = numpy.asarray(scipy.io.loadmat(fparam+'/lB2.mat')['lB2']).reshape(-1)
     lW  = scipy.io.loadmat(fparam+'/lW.mat')['lW']
-    lW2 = scipy.io.loadmat(fparam+'/lW2.mat')['lW2']
-    return (pW,hW,hB,lB,lB2,lW,lW2)
+    #lW2 = scipy.io.loadmat(fparam+'/lW2.mat')['lW2']
+    return (pW,hW,hB,lB,lW)
 
 def load_params(fparam):
     W = {}
@@ -160,16 +152,17 @@ def load_params(fparam):
     return ((W[0],W[1],W[2],W[3],W[4],W[5],W[6]))# (pW,hW,hB,lB,lB2,lW,lW2)
 
 
-def write_params_matlab(fparam,pW,hW,hB,lB,lB2,lW,lW2):
+def write_params_matlab(fparam,pW,hW,hB,lB,lW,lB2=None,lW2=None):
     scipy.io.savemat(fparam+'/pW.mat',mdict={'pW':pW},format='4')
     scipy.io.savemat(fparam+'/hW.mat',mdict={'hW':hW},format='4')
     scipy.io.savemat(fparam+'/hB.mat',mdict={'hB':hB},format='4')
     scipy.io.savemat(fparam+'/lB.mat',mdict={'lB':lB},format='4')
-    scipy.io.savemat(fparam+'/lB2.mat',mdict={'lB2':lB2},format='4')
+    #scipy.io.savemat(fparam+'/lB2.mat',mdict={'lB2':lB2},format='4')
     scipy.io.savemat(fparam+'/lW.mat',mdict={'lW':lW},format='4')
-    scipy.io.savemat(fparam+'/lW2.mat',mdict={'lW2':lW2},format='4')
+    #scipy.io.savemat(fparam+'/lW2.mat',mdict={'lW2':lW2},format='4')
 
-def write_params(param_file,pW,hW,hB,lB,lB2,lW,lW2):
+#deprected function 
+def write_params(param_file,pW,hW,hB,lB,lW,lB2=None,lW2=None):
     fparam = open(param_file,"w")
 
     for w in (pW,hW,hB,lB,lB2):
@@ -197,3 +190,39 @@ def WriteData(DataList, filename):
     for l in DataList:
         print >> fwrite, l 
     fwrite.close()
+
+def read_machine(paramdir):
+    infile = paramdir+"/mach.desc"
+    for l in open(infile):
+        l=l.strip().lower()
+	print l
+        if l.find("projection")>=0:
+            l=l.strip().split(':')
+            P = int(l[1].strip())
+	    continue
+        if l.find("vocab size")>=0:
+            l=l.strip().split(':')
+            N = int(l[1].strip())
+            continue
+        if l.find("hidden")>=0:
+            l=l.strip().split(':')
+            H = int(l[1].strip())
+            continue
+	if l.find("ngram")>=0:
+            l=l.strip().split(':')
+            ngram = int(l[1].strip())
+            continue
+	if l.find("map")>=0:
+            l=l.strip().split(':')
+            mapfile = l[1].strip()
+	    continue
+	if l.find("feature")>=0:
+	    l=l.strip().split(":")	
+	    n_feats = int(l[1].strip())
+ 
+    WordID = ReadWordID(mapfile)
+    return ngram,n_feats,N,P,H,WordID
+
+def write_janus_LM(fvocab,fparam,fsrilm):
+    fout = fparam+"/unigram"
+    ConstructUnigram(fvocab,fsrilm,fout)
