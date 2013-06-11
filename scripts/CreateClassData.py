@@ -32,3 +32,6 @@ for l in open(fNgramData):
 		else:
 			print cid, # UNK - one extra class
 	print ''
+for w in Class:
+	print >> sys.stderr, w, Class[w]
+	

@@ -2,14 +2,14 @@ import sys
 sys.dont_write_bytecode = True
 from numpy import zeros
 import numpy
-import theano 
+#import theano 
 import scipy.io 
 from Corpus import ReadWordID
 from ConstructUnigram import ConstructUnigram 
 def load_alldata_from_file(train,dev,test,ngram,N=4096):
     train_set = load_data_from_file(train,ngram,N,2000000)
-    valid_set =load_data_from_file(dev,ngram,N,4000)
-    test_set =load_data_from_file(test,ngram,N,4000)
+    valid_set =load_data_from_file(dev,ngram,N,5000)
+    test_set =load_data_from_file(test,ngram,N,5000)
 
     rval = [train_set, valid_set, test_set]
 
@@ -18,8 +18,8 @@ def load_alldata_from_file(train,dev,test,ngram,N=4096):
 
 def load_alldata(trainList,devList,testList,ngram,N=4096):
     train_set = load_data(trainList,ngram,N,2000000)
-    valid_set =load_data(devList,ngram,N,4000)
-    test_set =load_data(testList,ngram,N,4000)
+    valid_set =load_data(devList,ngram,N,5000)
+    test_set =load_data(testList,ngram,N,5000)
 
     rval = [train_set, valid_set, test_set]
     
@@ -160,7 +160,7 @@ def write_params_matlab(fparam,pW,hW,hB,lB,lW,lB2=None,lW2=None):
     #scipy.io.savemat(fparam+'/lB2.mat',mdict={'lB2':lB2},format='4')
     scipy.io.savemat(fparam+'/lW.mat',mdict={'lW':lW},format='4')
     #scipy.io.savemat(fparam+'/lW2.mat',mdict={'lW2':lW2},format='4')
-
+    scipy.io.savemat(fparam+'/All.mat',mdict={'pW':pW,'hW':hW,'hB':hB,'lW':lW,'lB':lB},format='5')
 #deprected function 
 def write_params(param_file,pW,hW,hB,lB,lW,lB2=None,lW2=None):
     fparam = open(param_file,"w")
@@ -226,3 +226,7 @@ def read_machine(paramdir):
 def write_janus_LM(fvocab,fparam,fsrilm):
     fout = fparam+"/unigram"
     ConstructUnigram(fvocab,fsrilm,fout)
+
+if __name__ == '__main__':
+   pW,hW,hB,lB,lW = load_params_matlab(sys.argv[1])	
+   write_params_matlab(sys.argv[2],pW,hW,hB,lB,lW) 

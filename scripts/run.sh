@@ -3,7 +3,8 @@ if [ $# -ne 2 ]; then
 	echo "eg: sh run.sh nnLM_config.ini gpu0"
 	exit 
 fi
- 	
+ 
+echo "RUN" > stoppage 	
 config_file=$1
 gpu=$2
 mkdir /var/tmp/ankurgan/$gpu

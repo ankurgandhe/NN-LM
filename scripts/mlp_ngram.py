@@ -6,6 +6,7 @@ This tutorial introduces the multilayer perceptron using Theano.
 instead of feeding the input to the logistic regression you insert a
 intermediate layer, called the hidden layer, that has a nonlinear
 activation function (usually tanh or sigmoid) . One can use many such
+B
 hidden layers making the architecture deep. The tutorial will also tackle
 the problem of MNIST digit classification.
 
@@ -18,7 +19,7 @@ References:
     - textbooks: "Pattern Recognition and Machine Learning" -
                  Christopher M. Bishop, section 5
 
-"""
+i"""
 __docformat__ = 'restructedtext en'
 
 
@@ -40,7 +41,7 @@ from logistic_sgd import LogisticRegression
 from NNLMio import write_params_matlab, read_machine,load_data,load_params_matlab,load_data_from_file
 from Corpus import CreateData
 
-copy_size=50000
+copy_size=7500
 
 class ProjectionLayer_ngram(object):
     def __init__(self, rng, input, nhistory, feature,n_feat, n_in, n_out, N=4096, W=None,
@@ -172,6 +173,21 @@ def convert_to_sparse(x,N=4096):
 	n = n+1
     return data
 
+def convert_to_sparse_matrix(x,N=4096):
+    data = []
+    row = []
+    col = [] 
+    n=0
+    for i in x:
+        if i >=N:
+            i=2
+        data.append(1)
+        row.append(n)
+        col.append(i)
+        n=n+1
+    data_matrix = sp.csr_matrix( (data,(row,col)), shape=(len(x),N),dtype=theano.config.floatX )
+    return data_matrix 
+
 def convert_to_sparse_combine(Listx,N=4096,a=0,b=1e20):
     data=[]
     b = min(b,len(Listx[0]))
@@ -185,6 +201,23 @@ def convert_to_sparse_combine(Listx,N=4096,a=0,b=1e20):
             data[n][i]=1
         
     return data
+
+def convert_to_sparse_matrix_combine(Listx,N=4096,a=0,b=1e20):
+    data = []
+    row = []
+    col = []
+
+    for n in range(a,b):
+        for x in Listx:
+            i = x[n]
+            if i >=N:
+                i=2
+	    data.append(1)
+            row.append(n)
+            col.append(i)
+    data_matrix = sp.csr_matrix( (data,(row,col)), shape=(len(x),N),dtype=theano.config.floatX )
+    return data_matrix
+
 
 def shared_data(data,type="float",sparse=False,borrow=False):
     data_x = data
@@ -248,14 +281,15 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
     ntest_set_y =  NNLMdata[2][1]
     
     #Convert valid and test set to sparse and shared objects 
-    valid_set_x_sparse=[]
-    for valid_set_xi in nvalid_set_x:
-        shared_x = shared_data(convert_to_sparse(valid_set_xi,N))
-        valid_set_x_sparse.append(shared_x) 
+    #valid_set_x_sparse=[]
+    #for valid_set_xi in nvalid_set_x:
+        #shared_x = shared_data(convert_to_sparse(valid_set_xi,N))
+	#shared_x = convert_to_sparse(valid_set_xi,N)
+        #valid_set_x_sparse.append(shared_x) 
 
     test_set_x_sparse=[]
     for test_set_xi in ntest_set_x:
-        shared_x = shared_data(convert_to_sparse(test_set_xi,N))
+	shared_x = shared_data(convert_to_sparse(test_set_xi,N))
         test_set_x_sparse.append(shared_x) 
 
     valid_set_y  = shared_data(nvalid_set_y,"int")
@@ -271,16 +305,16 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
         ntest_set_featx =  NNLMFeatData[2][0]
         ntest_set_featy =  NNLMFeatData[2][1]
 
-        vald_set_featx_sparse  = shared_data(convert_to_sparse_combine(nvalid_set_featx,n_feats))
+        #vald_set_featx_sparse  = shared_data(convert_to_sparse_combine(nvalid_set_featx,n_feats))
             
         test_set_featx_sparse  = shared_data(convert_to_sparse_combine(ntest_set_featx,n_feats))
 
-        valid_set_featy  = shared_data(nvalid_set_featy,"int")
+        #valid_set_featy  = shared_data(nvalid_set_featy,"int")
         test_set_featy   = shared_data(ntest_set_featy,"int")
         
     #UNKw.append(2)
     if n_unk > 0:
-        valid_error_penalty = GetPenaltyVector(nvalid_set_y,rev_n_unk,UNKw)
+        #valid_error_penalty = GetPenaltyVector(nvalid_set_y,rev_n_unk,UNKw)
         test_error_penalty  = GetPenaltyVector(ntest_set_y,rev_n_unk,UNKw)
             
     ######################
@@ -348,7 +382,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
     if ngram>=7:
         Tgivens[x6] =  test_set_x_sparse[5][index * batch_size:(index + 1) * batch_size]
     if n_feats>0:
-        Tgivens[xfeat] = test_set_featx_sparse[index * batch_size:(index + 1) * batch_size]
+        Tgivens[xfeat] = test_set_featx_sparse_notshared[index * batch_size:(index + 1) * batch_size]
 
     if n_unk > 0:
         Tgivens[error_penalty] = test_error_penalty[index * batch_size:(index + 1) * batch_size]
@@ -419,14 +453,14 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
     pW,hW,hB,lW,lB = final_weights() 
 
     #share training y , training features 
-    train_set_y = shared_data(ntrain_set_y,"int")
+    #train_set_y = shared_data(ntrain_set_y,"int")
     if n_feats>0:
-        train_set_featx_sparse  = shared_data(convert_to_sparse_combine(ntrain_set_featx,n_feats))
+        train_set_featx_sparse_notshared  = convert_to_sparse_matrix_combine(ntrain_set_featx,n_feats)
  
     #convert training data to numpy arrays.
     train_set_x_sparse_notshared = [] 
     for train_set_xi in ntrain_set_x:
-        train_x = convert_to_sparse(train_set_xi,N)
+        train_x = convert_to_sparse_matrix(train_set_xi,N)
         train_set_x_sparse_notshared.append(train_x)
 
     while (epoch < n_epochs) and (not done_looping):
@@ -443,7 +477,10 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
             #convert training integers  1-of-N vectors into shared objects 
             train_set_x_sparse=[]
             for train_set_xi in train_set_x_sparse_notshared:
-                shared_x = theano.shared( train_set_xi[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)],
+		print >> sys.stderr , "Converting to dense...",
+		tmp_matrix = train_set_xi[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)].todense()
+		print >> sys.stderr , "Conversion Done "
+                shared_x = theano.shared( tmp_matrix, #train_set_xi[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size)].todense(),
                                           borrow=False )
                 train_set_x_sparse.append(shared_x)
            
@@ -460,18 +497,21 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
             if ngram>=7:
                 Tgivens[x6] =  train_set_x_sparse[5][index * batch_size:(index + 1) * batch_size]
             if n_feats>0:
-                Tgivens[xfeat] = train_set_featx_sparse[parts_index * copy_size + index * batch_size:parts_index * copy_size + (index + 1) * batch_size]
-
-            Tgivens[y] = train_set_y[parts_index * copy_size +  index * batch_size:parts_index * copy_size +  (index + 1) * batch_size]
+                Tgivens[xfeat] = theano_shared(train_set_featx_sparse_notshared[parts_index * copy_size + index * batch_size:parts_index * copy_size + (index + 1) * batch_size].todense(),borrow=False)
+	    
+	    
+	    train_set_y = shared_data(ntrain_set_y[parts_index * copy_size :min(tot_train_size,(parts_index + 1)* copy_size) ],"int")
+            Tgivens[y] = train_set_y[index * batch_size:(index + 1) * batch_size] #[parts_index * copy_size +  index * batch_size:parts_index * copy_size +  (index + 1) * batch_size]
 
             if n_unk > 0:
                 train_error_penalty = GetPenaltyVector(ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)],rev_n_unk,UNKw)
                 Tgivens[error_penalty] = train_error_penalty[index * batch_size:(index + 1) * batch_size]
-
+            
+	    print >> sys.stderr,"defining function for part ", parts_index+1,"..",
             train_model = theano.function(inputs=[index], outputs=cost,                                                                      
                                           updates=updates,                     
                                           givens= Tgivens)
-            
+            print >> sys.stderr,"defined" 
             n_train_batches = len(ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)])/batch_size
            
             print >> sys.stderr, "Training part:", parts_index+1 ,"of",n_train_parts
@@ -488,8 +528,8 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
                     # compute zero-one loss on validation set
                     validation_losses = [validate_model(i) for i
                                          in xrange(n_valid_batches)]
-                    this_validation_loss = numpy.power(10, numpy.mean(validation_losses))
-                    
+                    this_validation_loss = numpy.exp(numpy.mean(validation_losses)) #numpy.power(10, numpy.mean(validation_losses))
+                     
                     print >> sys.stderr, ('epoch %i, minibatch %i/%i, validation error %f %%' %
                           (epoch, minibatch_index + 1, n_train_batches,
                            this_validation_loss))
@@ -506,12 +546,13 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,learning
                         best_iter = iter
 
                         # test it on the test set
-                        test_losses = [test_model(i) for i
-                                       in xrange(n_test_batches)]
-                        test_score = numpy.power(10, numpy.mean(test_losses))
+                        #test_losses = [test_model(i) for i
+                        #               in xrange(n_test_batches)]
+                        #test_score = numpy.exp(numpy.mean(test_losses))
+			test_score = this_validation_loss
 			pW,hW,hB,lW,lB = final_weights()
 
-                        print >> sys.stderr, (('     epoch %i, minibatch %i/%i, test error of '
+                        print >> sys.stderr, (('     epoch %i, minibatch %i/%i, valid error of '
                                'best model %f %%') %
                               (epoch, minibatch_index + 1, n_train_batches,
                                test_score))
@@ -588,13 +629,13 @@ def test_mlp(testfile,testfeat,paramdir,outfile="", batch_size=50):
     # construct the MLP class
     if ngram==2:
         classifier = MLP(rng=rng, input=x1, nhistory = [] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
-	probs_model_full = theano.function(inputs=[y, xfeat, x1], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
+	probs_model_full = theano.function(inputs=[y, xfeat, x1], outputs=[classifier.get_p_y_given_x(y), classifier.tot_ppl(y)], on_unused_input='warn')
     elif ngram==3:
         classifier = MLP(rng=rng, input=x1, nhistory = [x2] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
 	probs_model_full = theano.function(inputs=[y, xfeat, x1,x2], outputs=[classifier.get_p_y_given_x(y),classifier.tot_ppl(y)], on_unused_input='warn')
     elif ngram==4:
         classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
-        probs_model_full = theano.function(inputs=[y, xfeat, x1,x2,x3], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
+        probs_model_full = theano.function(inputs=[y, xfeat, x1,x2,x3], outputs=[classifier.get_p_y_given_x(y),classifier.tot_ppl(y)], on_unused_input='warn')
     elif ngram==5:
         classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3,x4] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
         probs_model_full = theano.function(inputs=[y, xfeat, x1,x2,x3,x4], outputs=[classifier.get_p_y_given_x(y)], on_unused_input='warn')
@@ -634,10 +675,10 @@ def test_mlp(testfile,testfeat,paramdir,outfile="", batch_size=50):
 	    if y==WordID['<UNK>']:
 		print >> foutPF, 0
 		continue
-            print >> foutPF, yl
+            print >> foutPF, numpy.exp(yl)
 
         gc.collect()
-    ppl = numpy.power(10, numpy.mean(test_ppls))
+    ppl = numpy.exp( numpy.mean(test_ppls))
     print "Perplexity with unks:",ppl 
         
 if __name__ == '__main__':

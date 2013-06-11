@@ -7,7 +7,6 @@ from mlp_ngram import train_mlp
 
 
 def print_params(foldparam,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam):
-    print >> sys.stderr, "system parameters:"
     print >> sys.stderr, "Ngram order : ", ngram
     print >> sys.stderr, "Vocab size:", N_input_layer
     print >> sys.stderr, "Projection layer:", P_projection_layer
@@ -22,7 +21,6 @@ def print_params(foldparam,ngram,N_input_layer,n_feats,P_projection_layer,H_hidd
 
 def write_machine(foldparam,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab):
     outfp = open(fparam+"/mach.desc",'w')
-    print >> outfp, "system parameters:"
     print >> outfp, "Ngram order : ", ngram
     print >> outfp, "Vocab size:", N_input_layer
     print >> outfp, "Projection layer:", P_projection_layer
@@ -43,6 +41,30 @@ def write_machine(foldparam,ngram,N_input_layer,n_feats,P_projection_layer,H_hid
 	print >> outfp, "Vocab map file:", fparam+"/vocab.nnid"
     else:
 	print >> outfp, "Vocab map file:", fvocab 
+
+def write_machine_hydra(foldparam,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab):
+    outfp = open(fparam+"/mach.desc.hydra",'w')
+    print >> outfp,ngram
+    print >> outfp,N_input_layer
+    print >> outfp,n_feats
+    print >> outfp, "Projection layer:", P_projection_layer
+    print >> outfp, "Hidden layer:", H_hidden_layer
+    print >> outfp, "learning rate:", learning_rate,
+    print >> outfp, "adaptive learning rate:", adaptive_learning_rate
+    print >> outfp, "Feature layer size:", n_feats
+    print >> outfp, "L1_reg:", L1_reg
+    print >> outfp, "L2_reg:",L2_reg
+    print >> outfp, "max epochs:", n_epochs
+    print >> outfp, "batch_size:", batch_size
+    print >> outfp, "old params dir:", foldparam
+    print >> outfp, "output dir:", fparam
+    if printMapFile:
+        fwrite = open(fparam+"/vocab.nnid",'w')
+        for w in sorted(WordID, key=WordID.get):
+            print >> fwrite, w,WordID[w]
+        print >> outfp, "Vocab map file:", fparam+"/vocab.nnid"
+    else:
+        print >> outfp, "Vocab map file:", fvocab
 
 
 def train_nnlm(params):
@@ -71,7 +93,7 @@ def train_nnlm(params):
     adaptive_learning_rate = params['use_adaptive']
     fparam = params['foutparam']
     write_janus = params['write_janus']	
-
+    foldmodel = params['fmodel']
     print >> sys.stderr, "Reading Vocab files", fvocab
     WordID, UNKw,printMapFile = GetVocabAndUNK(fvocab,ffreq,ngram,add_unk,use_unk)
     print >> sys.stderr, 'Reading Training File: ' , ftrain
@@ -80,6 +102,7 @@ def train_nnlm(params):
     DevData,N_input_layer,N_unk = CreateData(fdev,WordID,UNKw,ngram,False,use_unk)
     print >> sys.stderr, 'Reading Test File: ' , ftest
     TestData,N_input_layer,N_unk = CreateData(ftest,WordID,UNKw,ngram,False,use_unk)
+    #write_machine_hydra(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab)
     if params['write_ngram_files']:
         WriteData(TrainData, ftrain+'.'+str(ngram)+'g')
         WriteData(DevData, fdev+'.'+str(ngram)+'g')
@@ -94,14 +117,17 @@ def train_nnlm(params):
         n_feats = 0
     #Convert data suitable for NNLM training 
     NNLMdata = load_alldata(TrainData,DevData,TestData,ngram,N_input_layer)
-    foldmodel = params['fmodel']
     if foldmodel.strip()!="":
         OldParams = load_params_matlab(foldmodel)
+        write_params_matlab(fparam,*OldParams) #pW,hW,hB,lB,lW)
     else:
         OldParams = False 
-    
+    if not os.path.exists(fparam):
+        os.makedirs(fparam)
+    print >> sys.stderr,  "Writing system description"
     print_params(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
     write_machine(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab)
+    write_machine_hydra(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab)
     print >> sys.stderr, "singletons:", N_unk
     train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_unk,N_input_layer,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam)
      
