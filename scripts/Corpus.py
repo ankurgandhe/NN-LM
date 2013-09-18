@@ -1,4 +1,4 @@
-import sys 
+import sys , math 
 history = ["<s>","<s>","<s>","<s>"]
 
 def GetVocabAndUNK(fvocab,fvocabfreq,ngram,add_unk,use_unk):
@@ -51,6 +51,8 @@ def ReadVocabFile(fp,UNKw,use_unk):
             printMap = False
         if idx>0:
             w=l[0].strip()
+	    if w in WordID:
+		continue 
             WordID[w]=idx
             idx=idx+1
         else:
@@ -193,3 +195,22 @@ def ReadWordID(infile):
 	idx = int(l[1]	)
 	WordID[w]=idx
     return WordID
+
+def GetPerWordPenalty(WordID,ffreq):
+    Penalty={}
+    for l in open(ffreq):
+	l=l.strip().split()
+	w = l[1].strip()
+        fr = int(l[0])
+	if w in WordID:
+	    Penalty[WordID[w]] = 2. /(1+math.log(fr,10)) 
+	else:
+	    print >> "No wordId for word",w
+    Penalty[0] = 0.5
+    Penalty[1] = 0.5
+    Penalty[2] = 0.5 
+    fpout = open("/tmp/jk",'w')
+    print >> fpout, Penalty 
+    return Penalty
+	
+	

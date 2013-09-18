@@ -15,7 +15,7 @@ def Getppl(fin):
         Nsample = Nsample + 1
 
     entropy = -1 * (Sum/float(Nsample))
-    print Sum, Sum/float(Nsample), math.pow(10,entropy)
+    print "ppl skipping OOVs", math.pow(10,entropy), #Sum, Sum/float(Nsample), math.pow(10,entropy)
 
 
 
@@ -34,7 +34,7 @@ def Getppl2(fin,fin2,lambda1):
         Nsample = Nsample + 1 
 
     entropy = -1 * (Sum/float(Nsample))
-    print Sum, Sum/float(Nsample), math.pow(10,entropy)
+    print  math.pow(10,entropy) #Sum, Sum/float(Nsample), math.pow(10,entropy)
 
 if __name__ == '__main__':
     if len(sys.argv)<2:

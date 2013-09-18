@@ -1,6 +1,6 @@
 import sys
 sys.dont_write_bytecode = True
-from mlp_ngram import test_mlp
+from mlp_multilingual_ngram import test_mlp
 
 if __name__ == '__main__':
     if len(sys.argv)<3:
@@ -11,8 +11,12 @@ if __name__ == '__main__':
 	outfile = sys.argv[4]
     else:
 	outfile = ""
+    if len(sys.argv) > 5:
+        write_arpa = bool(sys.argv[5])
+    else:
+        write_arpa = bool(0) 
     
-    test_mlp(testfile,featfile,paramdir,outfile)
+    test_mlp(testfile,featfile,paramdir,outfile,write_arpa = write_arpa)
 
 
 

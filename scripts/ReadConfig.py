@@ -1,7 +1,7 @@
 import sys 
 from ConfigParser import SafeConfigParser
 import os
-RequiredValues = {'inputs':['train_file','dev_file','test_file','vocab_file','vocab_freq_file'],
+RequiredValues = {'inputs':['train_file','dev_file','test_file','vocab_file'], #,'vocab_freq_file'],
                   'outputs':['output_model_dir'],
                   'training_params': ['ngram','projection_layer_size']}
 
@@ -31,7 +31,10 @@ def ReadConfigFile(fConfig):
     value = parser.get('inputs', 'vocab_file').strip('"')
     fvocab = value 
     params['fvocab']=value
-    value = parser.get('inputs', 'vocab_freq_file').strip('"')
+    if  parser.has_option('inputs', 'vocab_freq_file'):
+	value = parser.get('inputs', 'vocab_freq_file').strip('"')
+    else:
+	value = "" 
     ffreq = value
     params ['ffreq']   = value
     if parser.has_option('inputs', 'old_model_dir'):
@@ -76,11 +79,16 @@ def ReadConfigFile(fConfig):
 	value = -1	
     params['N']=value
     value = parser.getint('training_params', 'projection_layer_size')
-    P = value 
     params['P']=value
     value = parser.getint('training_params', 'hidden_layer_size')
-    H = value
-    params['H']=value 
+    params['H']=value
+	
+    if parser.has_option('training_params','number_hidden_layer'):
+	value = parser.getint('training_params','number_hidden_layer')
+    else:
+	value = 1
+    params['nH'] = value 
+	
     if parser.has_option('training_params','add_singleton_as_unk'):
         add_unk =  parser.getboolean('training_params','add_singleton_as_unk')
         params['add_unk']=add_unk
@@ -139,6 +147,19 @@ def ReadConfigFile(fConfig):
     else:
         batch_size = 50
         params['batch_size']=50
+
+    if parser.has_option('training_params','gpu_copy_size'):
+        batch_size = parser.getint('training_params','gpu_copy_size')
+        params['copy_size']= batch_size
+    else:
+        params['copy_size']=20000
+    if parser.has_option('training_params','number_of_languages'):
+        n_langs = parser.getint('training_params','number_of_languages')
+        params['number_of_languages']= n_langs
+    else:
+        n_langs = 1
+        params['number_of_languages']= n_langs
+
 
     if parser.has_option('outputs','write_janus'):
 	write_janus = parser.getboolean('outputs','write_janus')

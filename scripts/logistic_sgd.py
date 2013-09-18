@@ -130,7 +130,7 @@ class LogisticRegression(object):
         self.params = [self.W, self.b] #,self.W2,self.b2]
         
     def get_p_y_given_x(self):
-        return self.p_y_given_x
+        return T.log(self.p_y_given_x)
     def get_p_y_given_x2(self,y,penalty=[]):
 	if penalty==[]:
             return T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]		
@@ -172,12 +172,12 @@ class LogisticRegression(object):
         if penalty==[]:
             return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
         else:
-            return -T.mean(T.log ( (self.p_y_given_x)[T.arange(y.shape[0]), y]*penalty) )
+            return -T.mean(T.log ( (self.p_y_given_x)[T.arange(y.shape[0]), y])*penalty) 
     def tot_ppl(self, y,penalty=[]):
         if penalty==[]:
             return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
         else:
-            return -T.mean(T.log( (self.p_y_given_x)[T.arange(y.shape[0]), y]*penalty) )
+            return -T.mean(T.log( (self.p_y_given_x)[T.arange(y.shape[0]), y])) #*penalty)
     def errors(self, y):
         """Return a float representing the number of errors in the minibatch
         over the total number of examples of the minibatch ; zero one

@@ -89,14 +89,14 @@ class HiddenLayer(object):
                 W_valueds *= 4
 
             W = theano.shared(value=W_values, name='W', borrow=True)
-        else:
-            W = theano.shared(value=W,name='W',borrow=True)
+        #else:
+        #    W = theano.shared(value=W,name='W',borrow=True)
 
         if b is None:
             b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
             b = theano.shared(value=b_values, name='b', borrow=True)
-        else:
-            b = theano.shared(value=b, name='b', borrow=True)
+        #else:
+        #    b = theano.shared(value=b, name='b', borrow=True)
         self.W = W
         self.b = b
 
@@ -106,6 +106,30 @@ class HiddenLayer(object):
         # parameters of the model
         self.params = [self.W, self.b]
 
+    def copy_weights(self,weight,bias):
+	self.W = weight
+	self.b = bias 
+
+def initialize_weights(rng,pW,pb,n_in,n_out,activation):
+  if pW is None:
+      W_values = numpy.asarray(rng.uniform(
+              low=-numpy.sqrt(6. / (n_in + n_out)),
+              high=numpy.sqrt(6. / (n_in + n_out)),
+              size=(n_in, n_out)), dtype=theano.config.floatX)
+      if activation == theano.tensor.nnet.sigmoid:
+          W_valueds *= 4
+          
+      W = theano.shared(value=W_values, name='W', borrow=True)
+  else:
+      W = pW 
+
+  if pb is None:
+      b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
+      b = theano.shared(value=b_values, name='b', borrow=True)
+  else:
+      b = pb 
+
+  return W,b 
 
 class MLP(object):
     """Multi-Layer Perceptron Class
@@ -116,19 +140,28 @@ class MLP(object):
     
     def __init__(self, rng, input, nhistory, feature,n_features, n_in,n_P, n_hidden,number_hidden_layer, n_out, ngram=3, Voc=4096,pW=None,hW=None,hB=None,lW=None,lB=None):
         
-        self.projectionLayer = ProjectionLayer_ngram(rng=rng, input=input, nhistory=nhistory, feature=feature, n_feat = n_features, n_in=1, n_out=n_P, W=pW, N=Voc,activation=None)
+        self.projectionLayer = ProjectionLayer_ngram(rng=rng, input=input, nhistory=nhistory, feature=feature, n_feat = n_features, n_in=1, n_out=n_P, W=pW, N=Voc[0],activation=None)
 	self.HiddenLayers=[]
 	self.nH = number_hidden_layer
+	self.hsharedW=[]
+	self.hsharedb=[] 
+	 
 	for i in range(number_hidden_layer): 
 	    if hW==None:
-		hweights = None
-		hbias = None 
+		if i==0:
+		    hweights,hbias = initialize_weights(rng,None,None,n_P*(ngram-1)+n_features,n_hidden,activation=T.tanh)
+		else:
+	 	    hweights,hbias = initialize_weights(rng,None,None,n_hidden,n_hidden,activation=T.tanh)
+		self.hsharedW.append(hweights)
+		self.hsharedb.append(hbias) 
+		#hweights = None
+		#hbias = None 
 	    else:
 		hweights = hW[i]
 		hbias = hB[i]
 	    if i==0:
              	hiddenLayer = HiddenLayer(rng=rng, input=self.projectionLayer.output,
-             	                          n_in=n_P*(ngram-1)+n_features*(ngram-1), n_out=n_hidden,
+             	                          n_in=n_P*(ngram-1)+n_features, n_out=n_hidden,
                 	                       activation=T.tanh,W=hweights,b=hbias)
 	    else:
 		hiddenLayer = HiddenLayer(rng=rng, input=self.HiddenLayers[i-1].output,
@@ -141,7 +174,7 @@ class MLP(object):
 
         self.logRegressionLayer = LogisticRegression(input=self.HiddenLayers[number_hidden_layer-1].output,
                                                      n_in=n_hidden,
-                                                     n_out=n_out,W=lW,b=lB)
+                                                     n_out=n_out[0],W=lW,b=lB)
 
         # L1 norm ; one regularization option is to enforce L1 norm to
         # be small
@@ -178,6 +211,8 @@ class MLP(object):
 	    self.params = self.params + self.HiddenLayers[i].params 
 	self.params = self.params + self.logRegressionLayer.params
 
+    def copy_hWeights(self, hWeights,bias):
+	self.HiddenLayers[0].copy_weights(hWeights,bias)
         
     def get_params_pW(self):
         return (self.projectionLayer.W)
@@ -229,34 +264,11 @@ def convert_to_sparse_combine(Listx,N=4096,a=0,b=1e20):
         
     return data
 
-def convert_to_sparse_feature(Listx,N=4096,a=0,b=1e20):
-    data=[]
-    b = min(b,len(Listx[0]))
-    data = zeros((b-a,2*N),dtype=theano.config.floatX)
-
-    for n in range(a,b):
-	c=0
-        for x in Listx:
-            i = x[n]
-            while( i >=N):
-                # to convert bigger into many smaller integers 
-		f = i % 256 # 8 bit 
-		data[n][c*N+f]=1
-		i = i >> 8 ; # shift by 8 bit
-		
-	    if c*N + i >= 2*N :
-		print >> sys.stderr, i,c*N+i 
-            data[n][c*N+i]=1
-	    c=c+1 
-    return data
-
-
 def convert_to_sparse_matrix_combine(Listx,N=4096,a=0,b=1e20):
     data = []
     row = []
     col = []
-    b = min(b,len(Listx[0]))
-   
+
     for n in range(a,b):
         for x in Listx:
             i = x[n]
@@ -268,32 +280,6 @@ def convert_to_sparse_matrix_combine(Listx,N=4096,a=0,b=1e20):
     data_matrix = sp.csr_matrix( (data,(row,col)), shape=(len(x),N),dtype=theano.config.floatX )
     return data_matrix
 
-def convert_to_sparse_matrix_feature(Listx,N=4096,a=0,b=1e20):
-    data = []
-    row = []
-    col = []
-    b = min(b,len(Listx[0]))
-    for n in range(a,b):
-	c=0
-        for x in Listx:
-            i = x[n]
-	    while( i >=N):
-                # to convert bigger into many smaller integers
-                f = i % 256 # 8 bit
-                data.append(1)
-		row.append(n)
-		col.append(c*N+f)
-                i = i >> 8 ; # shift by 8 bit
-
-            #if i >=N:
-	    #	print >> sys.stderr, "How is this possible!!!" 
-            #    i=0
-            data.append(1)
-            row.append(n)
-            col.append(c*N + i )
-	    c = c+1
-    data_matrix = sp.csr_matrix( (data,(row,col)), shape=(len(x),2*N),dtype=theano.config.floatX )
-    return data_matrix
 
 def shared_data(data,type="float",sparse=False,borrow=False):
     data_x = data
@@ -338,10 +324,13 @@ def shuffle_in_unison_inplace(a, b):
 	i = i+1 
     return newa, b
 
-def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size):
-            
+#def train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_feats_list,n_unk_list,N_list,P,H,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam_list,gpu_copy_size,n_languages):
+ 
+def get_classifier(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size,n_languages):
+           
     copy_size = gpu_copy_size 
     learning_rate0 = learning_rate
+    
     if n_unk > 0:
 	rev_n_unk  = 1./n_unk 
     else:
@@ -356,17 +345,10 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
     
     ntest_set_x =  NNLMdata[2][0]
     ntest_set_y =  NNLMdata[2][1]
-    
-    #Convert valid and test set to sparse and shared objects 
-    #valid_set_x_sparse=[]
-    #for valid_set_xi in nvalid_set_x:
-        #shared_x = shared_data(convert_to_sparse(valid_set_xi,N))
-	#shared_x = convert_to_sparse(valid_set_xi,N)
-        #valid_set_x_sparse.append(shared_x) 
 
     test_set_x_sparse=[]
     for test_set_xi in ntest_set_x:
-	shared_x = shared_data(convert_to_sparse(test_set_xi,N))
+	shared_x = shared_data(convert_to_sparse(test_set_xi,N[0]))
         test_set_x_sparse.append(shared_x) 
 
     valid_set_y  = shared_data(nvalid_set_y,"int")
@@ -382,12 +364,8 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
         ntest_set_featx =  NNLMFeatData[2][0]
         ntest_set_featy =  NNLMFeatData[2][1]
 
-        #vald_set_featx_sparse  = shared_data(convert_to_sparse_combine(nvalid_set_featx,n_feats))
-            
-        #test_set_featx_sparse  = shared_data(convert_to_sparse_combine(ntest_set_featx,n_feats))
-        test_set_featx_sparse  = shared_data(convert_to_sparse_feature(ntest_set_featx,n_feats))
+        test_set_featx_sparse  = shared_data(convert_to_sparse_combine(ntest_set_featx,n_feats))
 
-        #valid_set_featy  = shared_data(nvalid_set_featy,"int")
         test_set_featy   = shared_data(ntest_set_featy,"int")
         
     #UNKw.append(2)
@@ -413,6 +391,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
     error_penalty = T.fvector('error_penalty') # In case some word are more important than others, we give them additional penalty. Leave as [] for uniform penalty
     
     rng = numpy.random.RandomState(1234)
+    n_langs = 1 
     # construct the MLP class
     if OldParams:
         pW,hW,hB,lB,lW = OldParams
@@ -423,6 +402,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
         classifier = MLP(rng=rng, input=x1, nhistory = [] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
     elif ngram==3:
         classifier = MLP(rng=rng, input=x1, nhistory = [x2] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
+        classifier2 = MLP(rng=rng, input=x1, nhistory = [x2] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=classifier.hsharedW,hB=classifier.hsharedb,lW=lW,lB=lB,)
     elif ngram==4:
         classifier = MLP(rng=rng, input=x1, nhistory = [x2,x3] ,feature=xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
     elif ngram==5:
@@ -435,14 +415,22 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
     # the cost we minimize during training is the negative log likelihood of
     # the model plus the regularization terms (L1 and L2); cost is expressed
     # here symbolically
+
     if n_unk > 0:
         cost = classifier.negative_log_likelihood(y,error_penalty) \
             + L1_reg * classifier.L1 \
             + L2_reg * classifier.L2_sqr
+	cost2 = classifier2.negative_log_likelihood(y,error_penalty) \
+            + L1_reg * classifier2.L1 \
+            + L2_reg * classifier2.L2_sqr
+
     else:
         cost = classifier.negative_log_likelihood(y) \
             + L1_reg * classifier.L1 \
             + L2_reg * classifier.L2_sqr
+	cost2 = classifier2.negative_log_likelihood(y) \
+            + L1_reg * classifier2.L1 \
+            + L2_reg * classifier2.L2_sqr
 
     # compiling a Theano function that computes the mistakes that are made
     # by the model on a minibatch
@@ -460,13 +448,15 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
     if ngram>=7:
         Tgivens[x6] =  test_set_x_sparse[5][index * batch_size:(index + 1) * batch_size]
     if n_feats>0:
-        Tgivens[xfeat] = test_set_featx_sparse[index * batch_size:(index + 1) * batch_size]
+        Tgivens[xfeat] = test_set_featx_sparse_notshared[index * batch_size:(index + 1) * batch_size]
 
     if n_unk > 0:
         Tgivens[error_penalty] = test_error_penalty[index * batch_size:(index + 1) * batch_size]
         Touts = classifier.tot_ppl(y,error_penalty)
+	Touts2 = classifier2.tot_ppl(y,error_penalty)
     else:
         Touts = classifier.tot_ppl(y)
+        Touts2 = classifier2.tot_ppl(y)
 
     Tgivens[y] = test_set_y[index * batch_size:(index + 1) * batch_size]
 
@@ -475,30 +465,43 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
                                  outputs= Touts,
                                  on_unused_input='warn',
                                  givens= Tgivens )
+    test_model2 = theano.function(inputs=[index],
+                                 outputs= Touts2,
+                                 on_unused_input='warn',
+                                 givens= Tgivens )
+
 
     validate_model = theano.function(inputs=[index],
                                      outputs=Touts, 
                                      on_unused_input='warn',
                                      givens= Tgivens ) 
+    validate_model2 = theano.function(inputs=[index],
+                                     outputs=Touts2,
+                                     on_unused_input='warn',
+                                     givens= Tgivens )
+
 
     param_out = [];
+    param_out2 = [];
     param_out.append(classifier.get_params_pW())
+    param_out2.append(classifier2.get_params_pW())
+
     for i in range(number_hidden_layer):
 	param_out.append(classifier.get_params_hW(i))
 	param_out.append(classifier.get_params_hb(i))
+
+        param_out2.append(classifier2.get_params_hW(i))
+        param_out2.append(classifier2.get_params_hb(i))
+
+
     param_out.append(classifier.get_params_lW()); 
     param_out.append(classifier.get_params_lb()) ; 
-    #final_weights = theano.function(inputs=[], outputs=[classifier.get_params_pW(),classifier.get_params_hW(),classifier.get_params_hb(),
-    #                                                    classifier.get_params_lW(),classifier.get_params_lb()])
-    final_weights = theano.function(inputs=[], outputs= param_out) 
-    # Get counts etc... 
-    tot_train_size = len(ntrain_set_y)    
-    n_train_parts = tot_train_size/(copy_size) +  int( tot_train_size%copy_size!=0)
-    n_train_batches = copy_size/batch_size
-    batch_size_train = batch_size
-    n_valid_batches = len(nvalid_set_y) / batch_size
-    n_test_batches = len(ntest_set_y)/ batch_size   
 
+    param_out2.append(classifier.get_params_lW());
+    param_out2.append(classifier.get_params_lb()) ;
+
+    final_weights = theano.function(inputs=[], outputs= param_out) 
+    final_weights2 = theano.function(inputs=[], outputs= param_out2)
     # compute the gradient of cost with respect to theta (sotred in params)
     # the resulting gradients will be stored in a list gparams
     gparams = []
@@ -506,12 +509,29 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
         gparam = T.grad(cost, param)
         gparams.append(gparam)
         
+    gparams2 = []
+    for param in classifier2.params:
+        gparam = T.grad(cost2, param)
+        gparams2.append(gparam)
+
     # specify how to update the parameters of the model as a dictionary
-    updates = {}
-    for param, gparam in zip(classifier.params, gparams):
-        updates[param] = param - learning_rate * gparam
+    #updates = {}
+    #for param, gparam in zip(classifier.params, gparams):
+    #    updates[param] = param - learning_rate * gparam
+    tot_train_size = len(ntrain_set_y)
+    tot_valid_size = len(nvalid_set_y) 
+
+    return classifier, train_model, validate_model, test_model,final_weights, tot_train_size,tot_valid_size 
 
     print >> sys.stderr, '... training'
+
+    # Get counts etc...
+    n_train_parts = tot_train_size/(copy_size) +  int( tot_train_size%copy_size!=0)
+    n_train_batches = copy_size/batch_size
+    batch_size_train = batch_size
+    n_valid_batches = tot_valid_size / batch_size
+    n_test_batches = tot_valid_size / batch_size
+
 
     # early-stopping parameters
     patience = 100000  # look as this many examples regardless
@@ -537,17 +557,17 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
     print >> sys.stderr, "Training parts:", n_train_parts,",Copy size:",copy_size,",Total training size:",tot_train_size
     #pW,hW,hB,lW,lB = final_weights() 
     params = final_weights()
+    params2 = final_weights2()
+
     #share training y , training features 
     #train_set_y = shared_data(ntrain_set_y,"int")
     if n_feats>0:
-	print >> sys.stderr, n_feats 
-        #train_set_featx_sparse_notshared  = convert_to_sparse_matrix_combine(ntrain_set_featx,n_feats)
-        train_set_featx_sparse_notshared  = convert_to_sparse_matrix_feature(ntrain_set_featx,n_feats)
+        train_set_featx_sparse_notshared  = convert_to_sparse_matrix_combine(ntrain_set_featx,n_feats)
  
     #convert training data to numpy arrays.
     train_set_x_sparse_notshared = [] 
     for train_set_xi in ntrain_set_x:
-        train_x = convert_to_sparse_matrix(train_set_xi,N)
+        train_x = convert_to_sparse_matrix(train_set_xi,N[0])
         train_set_x_sparse_notshared.append(train_x)
 
     while (epoch < n_epochs) and (not done_looping):
@@ -557,8 +577,14 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
 	for param, gparam in zip(classifier.params, gparams):
             updates[param] = param - learning_rate * gparam
 
+        totcost2=0
+        updates2 = {}
+        for param, gparam in zip(classifier2.params, gparams2):
+            updates2[param] = param - learning_rate * gparam
+
+
         print >> sys.stderr, "Current learning rate:", learning_rate
-	train_set_y = shared_data(ntrain_set_y,"int")
+	#train_set_y = shared_data(ntrain_set_y,"int")
         for parts_index in range(n_train_parts):
 
             #convert training integers  1-of-N vectors into shared objects 
@@ -584,10 +610,7 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
             if ngram>=7:
                 Tgivens[x6] =  train_set_x_sparse[5][index * batch_size:(index + 1) * batch_size]
             if n_feats>0:
- 		tmp_matrix  = train_set_featx_sparse_notshared[parts_index * copy_size:min(tot_train_size,(parts_index + 1) * copy_size) ].todense()
-		shared_featx = theano.shared(tmp_matrix, #train_set_featx_sparse_notshared[parts_index * copy_size + index * batch_size:parts_index * copy_size + (index + 1) * batch_size].todense()
-				borrow=False)
-		Tgivens[xfeat]  = shared_featx[index * batch_size:(index + 1) * batch_size]
+                Tgivens[xfeat] = theano_shared(train_set_featx_sparse_notshared[parts_index * copy_size + index * batch_size:parts_index * copy_size + (index + 1) * batch_size].todense(),borrow=False)
 	    
 	    
 	    train_set_y = shared_data(ntrain_set_y[parts_index * copy_size :min(tot_train_size,(parts_index + 1)* copy_size) ],"int")
@@ -601,6 +624,10 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
             train_model = theano.function(inputs=[index], outputs=cost,                                                                      
                                           updates=updates,                     
                                           givens= Tgivens)
+	    train_model2 = theano.function(inputs=[index], outputs=cost2,
+                                          updates=updates2,
+                                          givens= Tgivens)
+
             #print >> sys.stderr,"defined" 
             n_train_batches = len(ntrain_set_y[parts_index * copy_size:min(tot_train_size, (parts_index+ 1) * copy_size)])/batch_size
            
@@ -611,12 +638,14 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
                     break
                 minibatch_avg_cost = train_model(minibatch_index)
                 totcost+=minibatch_avg_cost
-                
+                minibatch_avg_cost2 = train_model2(minibatch_index)
+                totcost2+=minibatch_avg_cost2
+ 
                 iter = epoch * n_train_batches + minibatch_index
                 
                 if (iter + 1) % validation_frequency == 0:
                     # compute zero-one loss on validation set
-                    validation_losses = [validate_model(i) for i
+                    validation_losses = [validate_model2(i) for i
                                          in xrange(n_valid_batches)]
                     this_validation_loss = numpy.exp(numpy.mean(validation_losses)) #numpy.power(10, numpy.mean(validation_losses))
                      
@@ -636,10 +665,10 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
                         best_iter = iter
 
                         # test it on the test set
-                        #test_losses = [test_model(i) for i
-                        #               in xrange(n_test_batches)]
-                        #test_score = numpy.exp(numpy.mean(test_losses))
-			test_score = this_validation_loss
+                        test_losses = [test_model(i) for i
+                                       in xrange(n_test_batches)]
+                        test_score = numpy.exp(numpy.mean(test_losses))
+			#test_score = this_validation_loss
 			#pW,hW,hB,lW,lB = final_weights()
 			params = final_weights()
                         print >> sys.stderr, (('     epoch %i, minibatch %i/%i, valid error of '
@@ -681,30 +710,26 @@ def train_mlp(NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_h
     write_all_params_matlab(fparam,params,number_hidden_layer)
 
 
-def test_mlp(testfile,testfeat,paramdir,outfile="", batch_size=50,write_arpa = False):
-    copy_size = 60000
+def test_multi_mlp(testfile,testfeat,paramdir,outfile="", batch_size=50,write_arpa = False):
+    copy_size = 20000
     if outfile == "":
 	outfile = testfile+".prob" 
     ngram,n_feats,N,P,H,number_hidden_layer,WordID = read_machine(paramdir) 
-    unkid = -1
-    if "<UNK>" in WordID:
-	unkid = WordID["<UNK>"]
+
     if write_arpa == False:
         TestData,N_input_layer,N_unk = CreateData(testfile,WordID,[],ngram,False,False) 
-        NNLMdata = load_data(TestData,ngram,N,1e10,unkid)
+        NNLMdata = load_data(TestData,ngram,N)
     else:
-        NNLMdata = load_data_from_file(testfile,ngram,N,1e10,unkid)
+        NNLMdata = load_data_from_file(testfile,ngram,N,1e10)
 
     if n_feats > 0:
 	if testfeat=="None":
 	     print >> sys.stderr, "number of feats", n_feats," but feature file not provided. Exiting" 
 	     sys.exit(1)
-	unkid = -1 
-	NNLMFeatData = load_data_from_file(testfeat,ngram,N,unkid) 
+	NNLMFeatData = load_data_from_file(testfeat,ngram,N) 
         ntest_set_featx =  NNLMFeatData[0]
         ntest_set_featy =  NNLMFeatData[1]
-        #test_set_featx_sparse  = convert_to_sparse_combine(ntest_set_featx,n_feats)
-        test_set_featx_sparse  = convert_to_sparse_feature(ntest_set_featx,n_feats)
+        test_set_featx_sparse  = convert_to_sparse_combine(ntest_set_featx,n_feats)
         #test_set_featy   = shared_data(ntest_set_featy,"int")
 
     pW,hW,hB,lW,lB = load_params_matlab_multi(paramdir,number_hidden_layer)
@@ -786,14 +811,8 @@ def test_mlp(testfile,testfeat,paramdir,outfile="", batch_size=50,write_arpa = F
             	for xi in yl:
                     i=0;
                     for pi in xi:
-                    	print >> foutPF,numpy.exp(pi)
+                    	print >> foutPF, numpy.exp(pi)
 	
         gc.collect()
     ppl = numpy.exp( numpy.mean(test_ppls))
-    print "Perplexity with OOVs:",ppl 
-    
-
-
-
-if __name__ == '__main__':
-    test_mlp()
+    print "Perplexity with OOVs:",ppl
