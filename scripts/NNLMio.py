@@ -9,8 +9,8 @@ from Corpus import ReadWordID
 from ConstructUnigram import ConstructUnigram 
 def load_alldata_from_file(train,dev,test,ngram,N=4096,unkid=2):
     train_set = load_data_from_file(train,ngram,N,2000000,unkid)
-    valid_set =load_data_from_file(dev,ngram,N,4000,unkid)
-    test_set =load_data_from_file(test,ngram,N,4000,unkid)
+    valid_set =load_data_from_file(dev,ngram,N,5000,unkid)
+    test_set =load_data_from_file(test,ngram,N,5000,unkid)
 
     rval = [train_set, valid_set, test_set]
 
@@ -108,7 +108,8 @@ def load_params_matlab(fparam,number_hidden_layer =1):
 
 def load_params_matlab_multi(fparam,number_hidden_layer =1):
     print >> sys.stderr, "Reading matlab files from dir : ",fparam
-    pW  = scipy.io.loadmat(fparam+'/pW.mat')['pW']
+    pW  = scipy.io.loadmat(fparam+'/All.mat')['pW']
+    scipy.io.savemat(fparam+'/pW.mat',mdict={'pW':pW},format='4')
     hW=[]
     hB=[]
     for i in range(number_hidden_layer):

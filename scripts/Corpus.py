@@ -1,4 +1,5 @@
 import sys , math 
+sys.dont_write_bytecode = True
 history = ["<s>","<s>","<s>","<s>"]
 
 def GetVocabAndUNK(fvocab,fvocabfreq,ngram,add_unk,use_unk):
@@ -12,7 +13,7 @@ def GetVocabAndUNK(fvocab,fvocabfreq,ngram,add_unk,use_unk):
         if UNKw==[]:
             add_unk=False
             use_unk=False
-    (WordID,printMapFile) = ReadVocabFile(fvocab,UNKw,use_unk)
+    (WordID,printMapFile) = ReadVocabFile(fvocab)
     '''if printMapFile:
         fwrite = open(fvocab+".nnid",'w')
         for w in sorted(WordID, key=WordID.get):
@@ -35,7 +36,7 @@ def CreateData(ftrain,WordID,UNKw,ngram,add_unk,use_unk):
         N_UNKw = 0
     return TrainingData,N_Vocab,N_UNKw
 
-def ReadVocabFile(fp,UNKw,use_unk):
+def ReadVocabFile(fp):
     WordID={}
     WordID['<s>']=0
     WordID['</s>']=1
@@ -196,21 +197,69 @@ def ReadWordID(infile):
 	WordID[w]=idx
     return WordID
 
-def GetPerWordPenalty(WordID,ffreq):
+def GetPerWordPenalty(WordID,fpenalty_vocab):
     Penalty={}
+    pen = 5 
+    for l in open(fpenalty_vocab):
+        l=l.strip().split()
+        w = l[0].strip().split(":")[0].strip()
+	Penalty[WordID[w]] = pen
+    for w in WordID:
+	if WordID[w] not in Penalty:
+	    Penalty[WordID[w]] = 1
+    Penalty[0] = 0.5*2
+    Penalty[1] = 0.5*2
+    Penalty[2] = 0.5*2
+    fpout = open("/tmp/jk",'w')
+    print >> fpout, Penalty
+    print >> sys.stderr, "Penalized", sum(i==pen for i in Penalty.values()), "words with",pen,"penalty"
+    return Penalty
+
+def GetFreqWordPenalty(WordID,ffreq):
+    Penalty={}
+    pen = 8
     for l in open(ffreq):
 	l=l.strip().split()
 	w = l[1].strip()
         fr = int(l[0])
 	if w in WordID:
-	    Penalty[WordID[w]] = 2. /(1+math.log(fr,10)) 
+	    if fr > 50:
+	    	Penalty[WordID[w]] = 1
+	    else:
+	    	Penalty[WordID[w]] = pen
+	    #Penalty[WordID[w]] = 2. /(1+math.log(fr,10)) 
 	else:
 	    print >> "No wordId for word",w
-    Penalty[0] = 0.5
-    Penalty[1] = 0.5
-    Penalty[2] = 0.5 
+    Penalty[0] = 0.5*2
+    Penalty[1] = 0.5*2
+    Penalty[2] = 0.5*2
     fpout = open("/tmp/jk",'w')
     print >> fpout, Penalty 
+    print >> sys.stderr, "Penalized", sum(i==pen for i in Penalty.values()), "words with",pen,"penalty"
     return Penalty
+
+def GetBigramPenalty(fpenalty_bigram):
+        BigramPenalty = []
+        for l in open(fpenalty_bigram):
+                l=l.strip()
+		penalty = int(l)
+		BigramPenalty.append(penalty) 
+        print >> sys.stderr, "Read ",len(BigramPenalty),"penalties"
+        return BigramPenalty
+
 	
+def GetSynset(WordLists):
+    if len(WordLists)!=2:
+	print >> sys.stderr, "Implemented only for 2 langauges"
+	return {} 
+    Synset={}
+    for w in WordLists[0]:
+	if w in WordLists[1]:
+	    Synset[WordLists[0][w]]=WordLists[1][w]
+
+    return Synset 
+	
+
+
+
 	

@@ -1,5 +1,6 @@
 if [ $# -ne 1 ]; then
 	echo "Usage : sh ToJanus.sh param-dir " 
+	exit
 fi 
 
 paramdir=$1

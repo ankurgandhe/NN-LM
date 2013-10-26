@@ -16,7 +16,7 @@ print ""
 print "\\2-grams:"
 for l in open(f2g):
     s=l.strip().split('\t') 
-    if len(l)==3:
+    if len(s)==3:
     	print l.strip() 
     else:
 	print s[0]+"\t"+s[1]+"\t"+"0" 

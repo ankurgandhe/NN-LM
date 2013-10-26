@@ -1,4 +1,5 @@
 import sys 
+sys.dont_write_bytecode = True
 from ConfigParser import SafeConfigParser
 import os
 RequiredValues = {'inputs':['train_file','dev_file','test_file','vocab_file'], #,'vocab_freq_file'],
@@ -109,7 +110,8 @@ def ReadConfigFile(fConfig):
         write_files = False #default value
         params['write_ngram_files']=write_files
 
-    
+      
+ 
     if parser.has_option('training_params','use_adaptive_rate'):
         use_adaptive = parser.getboolean('training_params','use_adaptive_rate')
         params['use_adaptive']= use_adaptive
@@ -159,6 +161,26 @@ def ReadConfigFile(fConfig):
     else:
         n_langs = 1
         params['number_of_languages']= n_langs
+
+    if parser.has_option('training_params','use_synonyms'):
+        use_adaptive = parser.getint('training_params','use_synonyms')
+        params['use_synonyms']= use_adaptive
+    else:
+        use_adaptive = 0
+        params['use_synonyms']=use_adaptive
+
+    para='penalty_vocab'
+    if parser.has_option('training_params',para):
+        params[para] = parser.get('training_params',para).strip('"') 
+    else:
+        params[para]=""
+
+    para='penalty_bigram'
+    if parser.has_option('training_params',para):
+        params[para] = parser.get('training_params',para).strip('"')
+    else:
+        params[para]=""
+
 
 
     if parser.has_option('outputs','write_janus'):

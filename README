@@ -1,1 +1,37 @@
-Hello
+Hello... THis is the NNLM tool readme file. 
+With this README, you will also find in this ( or in /home/ankurgan/tools/NNLM) folder : 
+nnLM_conf.ini 
+scripts/ 
+
+## Dependencies 
+This is a theano-based NNLM training tool. Hence, you must have 
+1. A gpu on the machine 
+2. cuda libraries installed 
+3. numpy, scipy 
+4. Theano toolkit installed 
+5. Theano dependencies : g++, python-dev, BLAS 
+
+## Training 
+
+All Training resources and information are provided via a configuration file, such as nnLM_defaults.ini/ nnlm_conf.ini 
+[inputs] : Provide location of your training,dev and test files in text format. These should be preprocessed(tokenization,cleaning,etc) 
+           vocab_file is the vocabulary to be used by the LM. (If you wish to provide the vocab ids as well, the format is "<word> <id>" 
+           vocab_freq_file is optional file to give freq information to the NNLM. Needed only for more complex models. 
+[outputs] : All output description files and matrices will be written to this directory 
+
+[training_params] : The network structure and training parameters are defined here. Most are self explanatory. 
+		    add_singleton_as_unk : If no OOVs are present in data, NNLM doesnt train them well. Hence you have an option of allowing the model to learn OOV probabilities by treating sigleton's as OOVs. A vocb frequeny file is required for this 
+		    use_singleton_as_unk : This will collapse all singletons into a single output node. 
+		    write_ngram_files : Mainly for debugging. If you want to write the ngram files being used by the traning , set is to True. The files have word ids and NOT words. 
+
+		    gpu_copy_size : For large training data size, gpu memory is insufficient. Hence, we need to split the data and copy in parts. A good estimate is : for 100k tokens, a copy size of 75000. 
+		    
+To run training on device gpu0, execute :
+sh scripts/run.sh nnlm_conf.ini gpu0  
+
+## Testing 
+
+To test the file, you need to have a trained model directory somewhere. 
+To run test on some file on gpu0 , execture 
+sh scripts/run_test.sh <test-file> None <model-dir> gpu0 <output-prob-file> 
+It outputs 2 perplexities: 1. Accounting the probabilities of OOVs 2. Skipping the probabilities of OOVs. 

@@ -76,7 +76,7 @@ def GetPplPerKW(Words,fkwlist):
     return Bins,Counts
 
 
-if len(sys.argv)<1:
+if len(sys.argv)<2:
     print "need 1/2/3 inputs : ppl-log-file \n ppl-log-file word-freq-file \n ppl-log-file kwlist-file(xml) kw"
     sys.exit(0)
 fppl = sys.argv[1]
