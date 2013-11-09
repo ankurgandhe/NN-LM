@@ -42,7 +42,8 @@ from NNLMio import read_machine,load_data,load_params_matlab_multi,load_data_fro
 from Corpus import CreateData
 
 copy_size=75000
-ProjectFeat=0
+ProjectFeat=1
+UseDirect=0
 class ProjectionLayer_ngram(object):
     def __init__(self, rng, input, nhistory, feature,n_feat, n_in, n_out, N=4096, W=None,
                  sparse=None,activation=None):
@@ -63,15 +64,26 @@ class ProjectionLayer_ngram(object):
 
         self.W = W
 	if ProjectFeat and n_feat>0:
-	    self.input_feat = T.concatenate((self.input,feature[:,0:n_feat]),axis=1)
-            lin_output = T.dot(self.input_feat, self.W)    
+	    if not UseDirect:
+	    	self.input_feat = T.concatenate((self.input,feature[:,0:n_feat]),axis=1)
+            	lin_output = T.dot(self.input_feat, self.W)   
+	    else:
+                self.input_feat = T.concatenate((self.input,feature[:,0:n_feat]),axis=1)
+		lin_output = self.W[T.arrange(self.input_feat.shape[0])]
 	else:
-            lin_output = T.dot(self.input, self.W)
+	    if not UseDirect:
+            	lin_output = T.dot(self.input, self.W)
+	    else:
+		lin_output = self.W[T.arange(self.input)]
 
         for history in nhistory:
-	    if ProjectFeat and n_feat>0:
-		history = T.concatenate((history,feature[:,n_feat:n_feat*2]),axis=1)
-            lin_output = T.concatenate((lin_output,T.dot(history,self.W)),axis=1)
+	   if not UseDirect: 
+	   	if ProjectFeat and n_feat>0:
+		    history = T.concatenate((history,feature[:,n_feat:n_feat*2]),axis=1)
+            	lin_output = T.concatenate((lin_output,T.dot(history,self.W)),axis=1)
+	   else:
+                #implemetn features
+                lin_output = T.concatenate((lin_output,self.W[T.arange(history)]),axis=1)
          
         if n_feat==0:
             self.output = lin_output
@@ -149,11 +161,18 @@ class MLP(object):
     """
     
     def __init__(self, rng, input, nhistory, feature,n_features, n_in,n_P, n_hidden,number_hidden_layer, n_out, ngram=3, Voc=4096,
-		 pW=None,hW=None,hB=None,lW=None,lB=None,shared=False):
+		 pW=None,hW=None,hB=None,lW=None,lB=None,shared=False,train_projection=True,new_weights=True):
         if ProjectFeat:
 	    Voc = Voc + n_features
-        self.projectionLayer = ProjectionLayer_ngram(rng=rng, input=input, nhistory=nhistory, feature=feature, n_feat = n_features, n_in=1, n_out=n_P, 
-						     W=pW, N=Voc,activation=None)
+	# if not train, ten we dirctly use pW as feats
+	if not train_projection:	
+	    self.pW = theano.shared(value=pW, name='b', borrow=True)
+ 
+	self.train_projection = train_projection 
+	if train_projection:
+            self.projectionLayer = ProjectionLayer_ngram(rng=rng, input=input, nhistory=nhistory, 
+	
+			   feature=feature, n_feat = n_features, n_in=1, n_out=n_P, W=pW, N=Voc,activation=None)
 	self.HiddenLayers=[]
 	self.nH = number_hidden_layer
 	self.hsharedW=[]
@@ -162,8 +181,11 @@ class MLP(object):
 	    hidden_insize = n_P*(ngram-1)
 	else:
 	    hidden_insize = n_P*(ngram-1)+ n_features*(ngram-1)
+
 	for i in range(number_hidden_layer): 
-	    if hW==None:
+	    if hW==None or new_weights==True:
+		if hW!=None:
+		    print >> sys.stderr, "Creating new hidden weights" 
 		if i==0:
 		    hweights,hbias = initialize_weights(rng,None,None,hidden_insize,n_hidden,activation=T.tanh)
 		else:
@@ -181,9 +203,18 @@ class MLP(object):
 		     hweights = hW[i]
 		     hbias = hB[i]
 	    if i==0:
-             	hiddenLayer = HiddenLayer(rng=rng, input=self.projectionLayer.output,
+		if train_projection:
+             	    hiddenLayer = HiddenLayer(rng=rng, input=self.projectionLayer.output,
              	                          n_in=hidden_insize, n_out=n_hidden,
                 	                       activation=T.tanh,W=hweights,b=hbias)
+		else:
+                    hiddenInput = input
+                    for xhistory in nhistory:
+                        hiddenInput = T.concatenate((hiddenInput,xhistory),axis=1)
+		    hiddenLayer = HiddenLayer(rng=rng, input=hiddenInput,
+                                          n_in=hidden_insize, n_out=n_hidden,
+                                               activation=T.tanh,W=hweights,b=hbias)
+
 	    else:
 		hiddenLayer = HiddenLayer(rng=rng, input=self.HiddenLayers[i-1].output,
                                           n_in=n_hidden, n_out=n_hidden,
@@ -192,8 +223,13 @@ class MLP(object):
         # The logistic regression layer gets as input the hidden units++++++++++++++++++++
         # of the hidden layer
 
-
-        self.logRegressionLayer = LogisticRegression(input=self.HiddenLayers[number_hidden_layer-1].output,
+	if new_weights and lW!=None:
+	    print >> sys.stderr,"Creating new logistic weights"
+	    self.logRegressionLayer = LogisticRegression(input=self.HiddenLayers[number_hidden_layer-1].output,
+                                                     n_in=n_hidden,
+                                                     n_out=n_out)
+	else:
+            self.logRegressionLayer = LogisticRegression(input=self.HiddenLayers[number_hidden_layer-1].output,
                                                      n_in=n_hidden,
                                                      n_out=n_out,W=lW,b=lB)
 
@@ -227,16 +263,27 @@ class MLP(object):
         # the parameters of the model are the parameters of the two layer it is
         # made out o
         
-        self.params = self.projectionLayer.params #+ #self.hiddenLayer.params + self.logRegressionLayer.params  
-	for i in range(number_hidden_layer):
-	    self.params = self.params + self.HiddenLayers[i].params 
-	self.params = self.params + self.logRegressionLayer.params
+	if not UseDirect and train_projection:
+            self.params = self.projectionLayer.params #+ #self.hiddenLayer.params + self.logRegressionLayer.params  
+	    for i in range(number_hidden_layer):
+	    	self.params = self.params + self.HiddenLayers[i].params 
+	    self.params = self.params + self.logRegressionLayer.params
+	else:
+            #self.params = self.projectionLayer.params #+ #self.hiddenLayer.params + self.logRegressionLayer.params
+            self.params = self.logRegressionLayer.params
+            for i in range(number_hidden_layer):
+                self.params = self.params + self.HiddenLayers[i].params
+            #self.params = self.params + self.logRegressionLayer.params
+
 
     def copy_hWeights(self, hWeights,bias):
 	self.HiddenLayers[0].copy_weights(hWeights,bias)
         
     def get_params_pW(self):
-        return (self.projectionLayer.W)
+	if self.train_projection:
+            return (self.projectionLayer.W)
+	else:
+	    return self.pW
     def get_params_hW(self,i):
         return self.HiddenLayers[i].W #for i in range(self.nH)]#self.hiddenLayer.W
     def get_params_hb(self,i):
@@ -270,6 +317,19 @@ def convert_to_sparse_matrix(x,N=4096):
         n=n+1
     data_matrix = sp.csr_matrix( (data,(row,col)), shape=(len(x),N),dtype=theano.config.floatX )
     return data_matrix 
+
+def convert_to_projection(x,pW,N=4096):
+    n=0
+    projectionList=[]
+    for i in x:
+        if i >=N:
+            i=2
+	projectionList.append(pW[i])
+        n=n+1
+    data_matrix = numpy.asarray(projectionList,dtype=theano.config.floatX)
+    #sp.csr_matrix( (data,(row,col)), shape=(len(x),N),dtype=theano.config.floatX )
+    return data_matrix
+
 
 def convert_to_sparse_combine(Listx,N=4096,a=0,b=1e20):
     data=[]
@@ -380,6 +440,8 @@ def GetPenaltyVector(y,penalty,Wids,share=True):
         #vec_penalty.append(penalty)#[i]=1
 	vec_penalty[i] = Penalty[y[i]] #.append(Penalty[y[i]])
         #vec_penalty2[i] = Penalty[y[i]] -1 #.append(Penalty[y[i]])
+	if vec_penalty[i]!=1:
+	    count = count + 1
 	if i%5000==0:
 	    print >> sys.stderr, i,",",
 	i=i+1 
@@ -388,6 +450,7 @@ def GetPenaltyVector(y,penalty,Wids,share=True):
     else:
 	vec_penalty_shared = vec_penalty #numpy.asarray(vec_penalty,dtype=theano.config.floatX) 
     #print >> sys.stderr, "Penalized ", numpy.sum(vec_penalty)/12 #sum(Penalty.values())," words"
+    print >> sys.stderr, "\nPenalized" , count , "examples" 
     return vec_penalty_shared
 
 def GetBigramPenaltyVector(ystart,yend,penalty,share=True):
@@ -424,7 +487,9 @@ def shuffle_in_unison_inplace(a, b):
 class TrainMLP(object):
 
     def __init__(self,NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,n_unk,N,P,H,number_hidden_layer,learning_rate, L1_reg, L2_reg, 
-                 n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size,spl_words,hWshared=None,hBshared=None,shared=False):
+                 n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size,spl_words,train_projection,new_weights,
+		 hWshared=None,hBshared=None,shared=False):
+
         self.learning_rate0 = learning_rate
 	self.ngram = ngram 
 	self.n_unk = n_unk
@@ -432,6 +497,20 @@ class TrainMLP(object):
 	self.L1_reg = L1_reg 
 	self.L2_reg = L2_reg 
 	self.L2_struct = 0.1
+	self.train_projection = train_projection 
+	self.counter=0
+        # make sure pW is available when we are not trnaining projection
+	if not train_projection and not OldParams:
+            print >> sys.stderr, "For pW to be not trianed, we need an initial model. Exiting"
+            sys.exit(0)
+
+        if OldParams:
+            pW,hW,hB,lW,lB = OldParams
+            self.learning_rate = 0.05
+        else:
+            pW = hW = hB = lB =  lW =  None
+
+	self.pW = pW 
 
         if n_unk > 0:
             self.rev_n_unk  = 1./n_unk 
@@ -451,7 +530,13 @@ class TrainMLP(object):
         
         self.test_set_x_sparse=[]
         for test_set_xi in self.ntest_set_x:
-            shared_x = shared_data(convert_to_sparse(test_set_xi,N))
+	    if not UseDirect:
+		if train_projection:
+        	    shared_x = shared_data(convert_to_sparse(test_set_xi,N))
+		else:
+                    shared_x = shared_data(convert_to_projection(test_set_xi,self.pW,N))	
+	    else:
+                shared_x = shared_data(test_set_xi)
             self.test_set_x_sparse.append(shared_x) 
 
         self.valid_set_y  = shared_data(self.nvalid_set_y,"int")
@@ -466,7 +551,7 @@ class TrainMLP(object):
             
             self.ntest_set_featx =  NNLMFeatData[2][0]
             self.ntest_set_featy =  NNLMFeatData[2][1]
-            
+            # need to implement UseDirect / train projection  
             self.test_set_featx_sparse  = shared_data(convert_to_sparse_matrix_feature(self.ntest_set_featx,n_feats).todense())
             self.test_set_featy   = shared_data(self.ntest_set_featy,"int")
  	    
@@ -480,7 +565,14 @@ class TrainMLP(object):
         #convert training data to numpy arrays.
         self.train_set_x_sparse_notshared = []
         for train_set_xi in self.ntrain_set_x:
-            train_x = convert_to_sparse_matrix(train_set_xi,N)
+            if not UseDirect:
+		if train_projection:
+            	    train_x = convert_to_sparse_matrix(train_set_xi,N)
+		else:
+                    train_x = convert_to_projection(train_set_xi,self.pW,N)
+	    else:
+                train_x = train_set_xi
+
             self.train_set_x_sparse_notshared.append(train_x)
             
         ######################
@@ -489,14 +581,24 @@ class TrainMLP(object):
         print >> sys.stderr, '...defining the model'
 
         # allocate symbolic variables for the data
-        index = T.lscalar()    # index to a [mini]batch
-        self.x1 = T.matrix('x1')  # the data is presented as rasterized images
-        self.x2 = T.matrix('x2')
-        self.x3 = T.matrix('x3')
-        self.x4 = T.matrix('x4')
-        self.x5 = T.matrix('x5')
-        self.x6 = T.matrix('x6')
-        self.xfeat = T.matrix('xfeat') # if we hav features 
+        index = T.lscalar()    # index to a [mini]batch	
+	if not UseDirect:
+            self.x1 = T.matrix('x1')  # the data is presented as rasterized images
+            self.x2 = T.matrix('x2')
+            self.x3 = T.matrix('x3')
+            self.x4 = T.matrix('x4')
+            self.x5 = T.matrix('x5')
+            self.x6 = T.matrix('x6')
+            self.xfeat = T.matrix('xfeat') # if we hav features 
+	else:
+            self.x1 = T.vector('x1')  # the data is presented as rasterized images
+            self.x2 = T.vector('x2')
+            self.x3 = T.vector('x3')
+            self.x4 = T.vector('x4')
+            self.x5 = T.vector('x5')
+            self.x6 = T.vector('x6')
+            self.xfeat = T.vector('xfeat') # if we hav features
+   
         self.y = T.ivector('y')  # the labels are presented as 1D vector of
         self.error_penalty = T.fvector('error_penalty') # In case some word are more important than others, 
 	# we give them additional penalty. Leave as [] for uniform penalty
@@ -504,22 +606,17 @@ class TrainMLP(object):
         rng = numpy.random.RandomState(1234)
         
         # construct the MLP class
-        if OldParams:
-            pW,hW,hB,lW,lB = OldParams
-            self.learning_rate = 0.05
-        else:
-            pW = hW = hB = lB =  lW =  None
         if ngram==2:
 	    if shared==False:
                 hWshared=hW; hBshared = hB;
             self.classifier = MLP(rng=rng, input=self.x1, nhistory = [] ,feature=self.xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, 
-				number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hWshared,hB=hBshared,lW=lW,lB=lB,)
+				number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hWshared,hB=hBshared,lW=lW,lB=lB,train_projection=train_projection,new_weights=new_weights)
         elif ngram==3:
             # if this is not training, then we want hWshared,hBshared to be the loaded matrices 
 	    if shared==False:
 		hWshared=hW; hBshared = hB; 	  
             self.classifier = MLP(rng=rng, input=self.x1, nhistory = [self.x2] ,feature=self.xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H,
-                                  number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hWshared,hB=hBshared,lW=lW,lB=lB,shared=shared)
+                                  number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hWshared,hB=hBshared,lW=lW,lB=lB,shared=shared,train_projection=train_projection,new_weights=new_weights)
         elif ngram==4:
             self.classifier = MLP(rng=rng, input=self.x1, nhistory = [self.x2,self.x3] ,feature=self.xfeat,n_features=n_feats,n_in=1, n_P=P, n_hidden=H, 
                                   number_hidden_layer = number_hidden_layer, n_out=N, Voc=N,ngram=ngram,pW=pW,hW=hW,hB=hB,lW=lW,lB=lB,)
@@ -587,8 +684,8 @@ class TrainMLP(object):
                                               givens= Tgivens ) 
     
         param_out = [];
-    
         param_out.append(self.classifier.get_params_pW())
+
     
         for i in range(number_hidden_layer):
             param_out.append(self.classifier.get_params_hW(i))
@@ -660,15 +757,25 @@ class TrainMLP(object):
 
 
 
-    def define_train_model(self,parts_index,copy_size,batch_size):
+    def define_train_model(self,parts_index,copy_size,batch_size,n_train_parts=10):
+	if n_train_parts ==1 and self.counter>1:
+	    return 1
         del self.train_set_x_sparse
         index = T.lscalar()    # index to a [mini]batch
-
+	self.counter = self.counter + 1 
         self.train_set_x_sparse=[]
         for train_set_xi in self.train_set_x_sparse_notshared:
-            tmp_matrix = train_set_xi[parts_index * copy_size:min(self.tot_train_size,(parts_index + 1) * copy_size)].todense()
-            shared_x = theano.shared( tmp_matrix, 
-                                      borrow=False )
+	    if not UseDirect:
+		if self.train_projection:	
+            	    tmp_matrix = train_set_xi[parts_index * copy_size:min(self.tot_train_size,(parts_index + 1) * copy_size)].todense()
+		    shared_x = theano.shared( tmp_matrix,borrow=False )
+		else:
+                    tmp_matrix = train_set_xi[parts_index * copy_size:min(self.tot_train_size,(parts_index + 1) * copy_size)]
+                    shared_x = theano.shared( tmp_matrix,borrow=False )
+	    else:
+                tmp_matrix = train_set_xi[parts_index * copy_size:min(self.tot_train_size,(parts_index + 1) * copy_size)]
+	        shared_x = shared_data(tmp_matrix,sparse=False,borrow=False) #theano.shared( tmp_matrix,sparse=False,borrow=False )
+
             self.train_set_x_sparse.append(shared_x)
 
         Tgivens = {}
@@ -684,6 +791,7 @@ class TrainMLP(object):
         if self.ngram>=7:
             Tgivens[self.x6] =  self.train_set_x_sparse[5][index * batch_size:(index + 1) * batch_size]
         if self.n_feats>0:
+	    # need to implement projection 
      	    tmp_matrix     = self.train_set_featx_sparse_notshared[parts_index * copy_size:min(self.tot_train_size,(parts_index + 1) * copy_size) ]
 	    tmp_matrix = tmp_matrix.todense()
             shared_featx   = theano.shared(tmp_matrix,borrow=False)
@@ -710,7 +818,7 @@ class TrainMLP(object):
 
 
         
-def train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_feats_list,n_unk_list,N_list,P,H,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam_list,gpu_copy_size_list,spl_words_list, synset, number_of_languages):
+def train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_feats_list,n_unk_list,N_list,P,H,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam_list,gpu_copy_size_list,spl_words_list, train_projection_list,new_weights_list,synset, number_of_languages):
 
     copy_size = min(gpu_copy_size_list )/ len(gpu_copy_size_list)
     learning_rate0 = learning_rate
@@ -719,11 +827,11 @@ def train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_
     for i in range(number_of_languages):
 	if Trainers == [] :
             Train1 = TrainMLP(NNLMdata_list[i],NNLMFeatData_list[i],OldParams_list[i],ngram_list[i],n_feats_list[i],n_unk_list[i],N_list[i],P,H,
-                              number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam_list[i],copy_size,spl_words_list[i])
+                              number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam_list[i],copy_size,spl_words_list[i],train_projection_list[i],new_weights_list[i])
 	else:
             Train1 = TrainMLP(NNLMdata_list[i],NNLMFeatData_list[i],OldParams_list[i],ngram_list[i],n_feats_list[i],n_unk_list[i],N_list[i],P,H,
                               number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam_list[i],copy_size,
-                              spl_words_list[i],Trainers[0].classifier.hsharedW,Trainers[0].classifier.hsharedb,True)
+                              spl_words_list[i],train_projection_list[i],new_weights_list[i],Trainers[0].classifier.hsharedW,Trainers[0].classifier.hsharedb,True)
 
         Trainers.append(Train1) 
 
@@ -792,7 +900,7 @@ def train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_
 	    #		Trainers[i].delete_shared()
 	    for i in range(number_of_languages):
                 if Trainers[i].tot_train_size > ( parts_index * copy_size ) : # and ( epoch==1 or n_train_parts>1) :	
-            	    Trainers[i].define_train_model(parts_index,copy_size,batch_size)
+            	    Trainers[i].define_train_model(parts_index,copy_size,batch_size,n_train_parts)
 		else:
 		    repeater = repeater + 1 
 		    if Trainers[i].tot_train_size <  repeater * copy_size:
@@ -805,7 +913,11 @@ def train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_
 		  
  		
             print >> sys.stderr, "Training part:", parts_index+1 ,"of",n_train_parts
-            for minibatch_index in xrange(n_train_batches):
+            print >> sys.stderr,"shuffling data... ",
+	    xn = numpy.arange(n_train_batches)
+            numpy.random.shuffle(xn)
+	    print >> sys.stderr,"shuffled"
+            for minibatch_index in xn: #xrange(n_train_batches):
 		validation_frequency = min(n_train_batches, patience / 2)
                 if minibatch_index * batch_size > tot_train_size:
                     break
@@ -814,7 +926,7 @@ def train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_
 	            if Trainers[i].tot_train_size > ( parts_index * copy_size  + minibatch_index * batch_size)  :
                     	minibatch_avg_cost = Trainers[i].train_model(minibatch_index)
                     	totcost+=minibatch_avg_cost
-		    if Trainers[i].tot_train_size <= ( parts_index * copy_size ) and Trainers[i].tot_train_size >  repeater * copy_size + minibatch_index * batch_size :
+		    elif Trainers[i].tot_train_size <= ( parts_index * copy_size ) and Trainers[i].tot_train_size >  repeater * copy_size + minibatch_index * batch_size :
                         minibatch_avg_cost = Trainers[i].train_model(minibatch_index)
                         totcost+=minibatch_avg_cost
                 
@@ -917,13 +1029,23 @@ def test_mlp(testfile,testfeat,paramdir,outfile="", batch_size=50,write_arpa = F
     # allocate symbolic variables for the data
     index = T.lscalar()    # index to a [mini]batch
     input_symbols = [] 
-    x1 = T.matrix('x1') ; input_symbols.append(x1) # the data is presented as rasterized images
-    x2 = T.matrix('x2') ; input_symbols.append(x2)
-    x3 = T.matrix('x3') ; input_symbols.append(x3)
-    x4 = T.matrix('x4') ; input_symbols.append(x4)
-    x5 = T.matrix('x5') ; input_symbols.append(x5)
-    x6 = T.matrix('x6') ; input_symbols.append(x6)
-    xfeat = T.matrix('xfeat') # if we hav features
+    if not UseDirect:
+    	x1 = T.matrix('x1') ; input_symbols.append(x1) # the data is presented as rasterized images
+    	x2 = T.matrix('x2') ; input_symbols.append(x2)
+	x3 = T.matrix('x3') ; input_symbols.append(x3)
+    	x4 = T.matrix('x4') ; input_symbols.append(x4)
+    	x5 = T.matrix('x5') ; input_symbols.append(x5)
+    	x6 = T.matrix('x6') ; input_symbols.append(x6)
+    	xfeat = T.matrix('xfeat') # if we hav features
+    else:
+        x1 = T.vector('x1') ; input_symbols.append(x1) # the data is presented as rasterized images
+        x2 = T.vector('x2') ; input_symbols.append(x2)
+        x3 = T.vector('x3') ; input_symbols.append(x3)
+        x4 = T.vector('x4') ; input_symbols.append(x4)
+        x5 = T.vector('x5') ; input_symbols.append(x5)
+        x6 = T.vector('x6') ; input_symbols.append(x6)
+        xfeat = T.vector('xfeat') # if we hav features
+
     y = T.ivector('y')  # the labels are presented as 1D vector of
     error_penalty = T.fvector('error_penalty') # In case some word are more important than others, we give them additional penalty. Leave as [] for uniform penalty
 
@@ -966,13 +1088,20 @@ def test_mlp(testfile,testfeat,paramdir,outfile="", batch_size=50,write_arpa = F
 	print >> sys.stderr,"running batch", i+1,"of ",test_batches 
 	x_sparse=[]
 	for set_x in ntest_set_x:
-            x = convert_to_sparse(set_x[i*copy_size: (i+1)*copy_size],N)
+	    if not UseDirect:
+            	x = convert_to_sparse(set_x[i*copy_size: (i+1)*copy_size],N)
+	    else:
+		x = numpy.asarray(set_x[i*copy_size: (i+1)*copy_size],dtype=theano.config.floatX)
+
   	    x_sparse.append(x)
         y_test = ntest_set_y[i*copy_size : (i+1)*copy_size] 
 	if n_feats > 0:
  	    x_feat = test_set_featx_sparse[i * copy_size:(i + 1) * copy_size]
 	else:
-	    x_feat = [[],[]]
+	    if not UseDirect:
+	    	x_feat = [[],[]]
+	    else:
+		x_feat = []
 	#print y_test, x_feat, x_sparse[0], x_sparse[1]
 	if write_arpa == False:
       	    scores,loss=  probs_model_full(y_test,x_feat,*x_sparse) 

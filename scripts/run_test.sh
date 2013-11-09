@@ -11,7 +11,7 @@ gpu=$4
 outfile=$5
 write_arpa=$6 
 mkdir -p /var/tmp/ankurgan/$gpu
-THEANO_FLAGS='base_compiledir=/var/tmp/ankurgan/'$gpu,'device='$gpu python scripts/TestNNLM.py $test $testfeat $param $outfile $write_arpa
+THEANO_FLAGS='base_compiledir=/var/tmp/ankurgan/'$gpu,'device='$gpu,'exception_verbosity=high' python scripts/TestNNLM.py $test $testfeat $param $outfile $write_arpa
 if [ "$outfile" = "" ]
 then
 	python scripts/ppl.py $test.prob 

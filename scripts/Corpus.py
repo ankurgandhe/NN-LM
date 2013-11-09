@@ -79,6 +79,19 @@ def ReadFreqFile(fp):
         UNKw.append(w)
     return UNKw
 
+def ReadFullFreqFile(fp):
+    wFreq={}
+    for l in open(fp):
+        l=l.strip().split()
+        if len(l)<2:
+            print >> sys.stderr, "Voc frequency entry \'",l,"\'does not have either word or frequency... not using freq."
+            return []
+            break
+        w = l[1]
+        fr = int(l[0])
+        wFreq[w] = fr
+    return wFreq
+
 def PrepareData_UNK(ftrain,ngram,WordID,UNKw):
     ngram = ngram -1
     TrainingData=[]
@@ -215,15 +228,21 @@ def GetPerWordPenalty(WordID,fpenalty_vocab):
     print >> sys.stderr, "Penalized", sum(i==pen for i in Penalty.values()), "words with",pen,"penalty"
     return Penalty
 
-def GetFreqWordPenalty(WordID,ffreq):
+def GetFreqWordPenalty(WordID,ffreq,thresh):
     Penalty={}
-    pen = 8
+    pen = 5
+    threshold  =  thresh
+    if thresh == -1:
+	threshold = 50
+    #20 # for tagalog limited 
+    #6 #For Pashto limited. Cantonese Limited   
+    print >> sys.stderr, "threshold freq:<=",threshold  
     for l in open(ffreq):
 	l=l.strip().split()
 	w = l[1].strip()
         fr = int(l[0])
 	if w in WordID:
-	    if fr > 50:
+	    if fr > threshold:
 	    	Penalty[WordID[w]] = 1
 	    else:
 	    	Penalty[WordID[w]] = pen

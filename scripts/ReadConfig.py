@@ -181,6 +181,24 @@ def ReadConfigFile(fConfig):
     else:
         params[para]=""
 
+    para='penalty_thresh'
+    if parser.has_option('training_params',para):
+        params[para] = parser.getint('training_params',para)
+    else:
+        params[para]=-1
+
+    para='train_projection'
+    if parser.has_option('training_params',para):
+        params[para] = parser.getboolean('training_params',para)
+    else:
+        params[para]=True
+
+    para='new_weights'
+    if parser.has_option('training_params',para):
+        params[para] = parser.getboolean('training_params',para)
+    else:
+        params[para]=False
+
 
 
     if parser.has_option('outputs','write_janus'):

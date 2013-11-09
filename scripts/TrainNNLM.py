@@ -107,7 +107,9 @@ def read_params(params):
     use_synonyms = params['use_synonyms']
     fpenalty_vocab = params['penalty_vocab']	
     fpenalty_bigram = params['penalty_bigram']
-
+    thresh = params['penalty_thresh']
+    train_projection = params['train_projection']
+    new_weights = params['new_weights']
     print >> sys.stderr, "Reading Vocab files", fvocab
     WordID, UNKw,printMapFile = GetVocabAndUNK(fvocab,ffreq,ngram,add_unk,use_unk)
     print >> sys.stderr, 'Reading Training File: ' , ftrain
@@ -146,7 +148,7 @@ def read_params(params):
     spl_words = UNKw
     if use_unk:
 	if fpenalty_vocab=="" and fpenalty_bigram=="":
-            spl_words = GetFreqWordPenalty(WordID,ffreq)
+            spl_words = GetFreqWordPenalty(WordID,ffreq,thresh)
 	else :
 	    if fpenalty_bigram=="":
     	    	spl_words = GetPerWordPenalty(WordID,fpenalty_vocab)
@@ -161,7 +163,7 @@ def read_params(params):
     print_params(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,number_hidden_layer)
     write_machine(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab,number_hidden_layer)
     write_machine_hydra(foldmodel,ngram,N_input_layer,n_feats,P_projection_layer,H_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,printMapFile,WordID,fvocab,number_hidden_layer)
-    return (NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_unk,N_input_layer,P_projection_layer,H_hidden_layer,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size,spl_words,use_synonyms ) 
+    return (NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_unk,N_input_layer,P_projection_layer,H_hidden_layer,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size,spl_words,train_projection,new_weights,use_synonyms ) 
 
 
 def train_nnlm(params_list):
@@ -181,9 +183,9 @@ def train_nnlm(params_list):
     #if number_of_languages==0:
     #    train_mlp(*Loaded_data[0]) #NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_unk,N_input_layer,P_projection_layer,H_hidden_layer,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size)
     #else:
-    NNLMdata_list = [];NNLMFeatData_list = [];OldParams_list = [];ngram_list = [];n_feats_list = [];N_unk_list = [];N_input_layer_list =  [];fparam_list = [];gpu_copy_size_list=[];spl_words_list=[];
+    NNLMdata_list = [];NNLMFeatData_list = [];OldParams_list = [];ngram_list = [];n_feats_list = [];N_unk_list = [];N_input_layer_list =  [];fparam_list = [];gpu_copy_size_list=[];spl_words_list=[];train_projection_list = [] ;new_weights_list = [] ; 
     for i in range(number_of_languages):
-        NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_unk,N_input_layer,P_projection_layer,H_hidden_layer,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size,spl_words,use_synonyms = Loaded_data[i]
+        NNLMdata,NNLMFeatData,OldParams,ngram,n_feats,N_unk,N_input_layer,P_projection_layer,H_hidden_layer,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam,gpu_copy_size,spl_words,train_projection,new_weights, use_synonyms = Loaded_data[i]
         NNLMdata_list.append(NNLMdata)
         NNLMFeatData_list.append(NNLMFeatData)
         OldParams_list.append(OldParams)
@@ -194,7 +196,9 @@ def train_nnlm(params_list):
         fparam_list.append(fparam) 
         gpu_copy_size_list.append(gpu_copy_size)	
         spl_words_list.append(spl_words)
-    train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_feats_list,N_unk_list,N_input_layer_list,P_projection_layer,H_hidden_layer,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam_list,gpu_copy_size_list,spl_words_list,synset,number_of_languages)
+	train_projection_list.append(train_projection)
+	new_weights_list.append(new_weights)
+    train_multi_mlp(NNLMdata_list,NNLMFeatData_list,OldParams_list,ngram_list,n_feats_list,N_unk_list,N_input_layer_list,P_projection_layer,H_hidden_layer,number_hidden_layer,learning_rate, L1_reg, L2_reg, n_epochs,batch_size,adaptive_learning_rate,fparam_list,gpu_copy_size_list,spl_words_list,train_projection_list,new_weights_list,synset,number_of_languages)
 
     '''for l in range(number_of_languages):     
     	if Loaded_data[l]['write_janus'] == True:	
